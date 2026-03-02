@@ -4,276 +4,208 @@ import pandas as pd
 import os
 import threading
 import random
-from datetime import datetime
-import google.generativeai as genai
 from flask import Flask
 
-# ==========================================
-# ⚙️ ASOSIY SOZLAMALAR
-# ==========================================
+# --- SOZLAMALAR ---
 TOKEN = '6844735110:AAHybqfU2qnfxXuy7MGUG-VxvMWs3aP_5f8'
-GEMINI_KEY = 'AIzaSyDWUfZvr3Tq2O87HyYT9UjX_1O8OJf26Iw'
 ADMIN_ID = 6761276533
 CHANNEL_ID = -1003634886616 
-
-# AI Integratsiyasi (Xatolik to'g'irlandi)
-genai.configure(api_key=GEMINI_KEY)
-ai_model = genai.GenerativeModel('gemini-pro') 
 
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
 
-DB_FILE = "feniks_v6.csv"
-PROJECTS_FILE = "projects_v6.csv"
+DB_FILE = "feniks_v7.csv"
+PROJECTS_FILE = "projects_v7.csv"
 
-# ==========================================
-# 🗄 MA'LUMOTLAR BAZASI
-# ==========================================
+# --- MA'LUMOTLARNI YUKLASH ---
 def load_data():
     if not os.path.exists(DB_FILE):
+        # Boshlang'ich aktyorlar
+        actors = ["Zoom", "Umarbek", "AMIN", "Bexruz", "Komron", "Shabnam", "Kamilla", "Tarjimon", "Feniks"]
         df = pd.DataFrame({
-            "Ism": ["Zoom", "Umarbek", "AMIN", "Bexruz", "Komron", "Shabnam", "Kamilla", "Tarjimon", "Feniks"],
-            "Ishladi": [1400000, 300000, 200000, 400000, 400000, 200000, 200000, 100000, 2360000],
-            "To'landi": [700000, 200000, 150000, 400000, 400000, 100000, 100000, 0, 2360000],
+            "Ism": actors,
+            "Ishladi": [0]*9,
+            "To'landi": [0]*9,
             "Telegram_ID": [0]*9,
             "Parol": [str(random.randint(1000, 9999)) for _ in range(9)]
         })
         df.loc[df["Ism"] == "Feniks", "Telegram_ID"] = ADMIN_ID
-        df.loc[df["Ism"] == "Feniks", "Parol"] = "Admin"
         df.to_csv(DB_FILE, index=False)
     return pd.read_csv(DB_FILE)
 
 def load_projects():
     if not os.path.exists(PROJECTS_FILE):
-        df = pd.DataFrame({
-            "Nomi": ["Gravity Falls", "Sin Mu"],
-            "Narx": [50000, 60000], # 1 qism uchun avtomat to'lanadigan narx (so'm)
-            "Deadline": ["Belgilanmagan", "Belgilanmagan"]
-        })
+        # Loyiha nomi, Aktyor ismi, Stavka (narx)
+        df = pd.DataFrame(columns=["Loyiha", "Aktyor", "Narx"])
         df.to_csv(PROJECTS_FILE, index=False)
     return pd.read_csv(PROJECTS_FILE)
 
-def save_data(df, filename):
-    df.to_csv(filename, index=False)
+def save_df(df, file):
+    df.to_csv(file, index=False)
 
-# ==========================================
-# 🎛 MENYULAR 
-# ==========================================
+# --- MENYULAR ---
 def main_menu(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     if user_id == ADMIN_ID:
-        markup.add("📊 Moliya", "➕ Hisob-Kitob", "🎬 Loyihalar", "🔑 Parollar", "📢 E'lon", "📁 Excel")
+        markup.add("📊 Moliya", "➕ Hisob-Kitob", "🎬 Loyihalar", "🔑 Parollar", "📁 Excel")
     else:
-        markup.add("💰 Mening Hisobim", "🎙 Ovoz topshirish", "📖 AI Tarjimon")
+        markup.add("💰 Mening Hisobim", "🎙 Ovoz topshirish")
     return markup
 
-# ==========================================
-# 🚀 START VA AVTORIZATSIYA
-# ==========================================
+# --- START ---
 @bot.message_handler(commands=['start'])
 def start(message):
     df = load_data()
     user_id = message.from_user.id
     if user_id == ADMIN_ID:
-        bot.send_message(message.chat.id, "👑 **FeniksStudio Rejissyor Paneli**\n\nTizim 100% quvvat bilan ishlamoqda.", reply_markup=main_menu(user_id))
+        bot.send_message(message.chat.id, "👑 **FeniksStudio Boshqaruv Markazi**", reply_markup=main_menu(user_id))
     elif user_id in df["Telegram_ID"].values:
-        actor = df.loc[df["Telegram_ID"] == user_id, "Ism"].values[0]
-        bot.send_message(message.chat.id, f"🎧 Salom, **{actor}**!\nFeniksStudio shaxsiy kabinetingizdasiz.", reply_markup=main_menu(user_id))
+        bot.send_message(message.chat.id, "🎧 Salom! Dublyaj xonasiga xush kelibsiz.", reply_markup=main_menu(user_id))
     else:
-        bot.send_message(message.chat.id, "🔐 **FeniksStudio Maxfiy Tizimi**\n\nIltimos, sizga berilgan 4 xonali PIN-kodni yozing:")
+        bot.send_message(message.chat.id, "🔐 Iltimos, PIN-kodni kiriting:")
 
 @bot.message_handler(func=lambda m: m.text.isdigit() and len(m.text) == 4)
 def login(message):
     df = load_data()
-    pin = message.text
-    if pin in df["Parol"].values:
-        actor = df.loc[df["Parol"] == pin, "Ism"].values[0]
-        df.loc[df["Parol"] == pin, "Telegram_ID"] = message.from_user.id
-        df.loc[df["Parol"] == pin, "Parol"] = "Yopiq"
-        save_data(df, DB_FILE)
-        bot.send_message(message.chat.id, f"✅ Muvaffaqiyatli kirdingiz, **{actor}**!", reply_markup=main_menu(message.from_user.id))
+    if message.text in df["Parol"].values:
+        actor = df.loc[df["Parol"] == message.text, "Ism"].values[0]
+        df.loc[df["Parol"] == message.text, "Telegram_ID"] = message.from_user.id
+        save_df(df, DB_FILE)
+        bot.send_message(message.chat.id, f"✅ Xush kelibsiz, {actor}!", reply_markup=main_menu(message.from_user.id))
     else:
-        bot.send_message(message.chat.id, "❌ PIN-kod xato.")
+        bot.send_message(message.chat.id, "❌ PIN xato.")
 
-# ==========================================
-# 💰 HISOB-KITOB VA MOLIYA (Oldin ishlamagan bo'limlar)
-# ==========================================
-@bot.message_handler(func=lambda m: m.text == "📊 Moliya" and m.from_user.id == ADMIN_ID)
-def admin_report(message):
-    df = load_data()
-    txt = "📊 **FENIKS STUDIO UMUMIY HISOBOT**\n━━━━━━━━━━━━━━━━━━━━\n"
-    jami_qarz = 0
-    for _, row in df.iterrows():
-        qarz = int(row["Ishladi"]) - int(row["To'landi"])
-        if qarz > 0:
-            txt += f"🔴 **{row['Ism']}**: {qarz:,} so'm qarzimiz bor\n"
-            jami_qarz += qarz
-        else:
-            txt += f"🟢 **{row['Ism']}**: Hisob-kitob qilingan\n"
-    txt += f"━━━━━━━━━━━━━━━━━━━━\n🔴 **Jami berilishi kerak:** {jami_qarz:,} so'm"
-    bot.send_message(message.chat.id, txt)
-
-@bot.message_handler(func=lambda m: m.text == "💰 Mening Hisobim")
-def my_balance(message):
-    df = load_data()
-    user_id = message.from_user.id
-    if user_id in df["Telegram_ID"].values:
-        row = df[df["Telegram_ID"] == user_id].iloc[0]
-        qarz = int(row["Ishladi"]) - int(row["To'landi"])
-        status = "✅ Sizda qarz yo'q" if qarz <= 0 else f"❌ To'lanishi kerak: {qarz:,} so'm"
-        text = f"👤 **Aktyor:** {row['Ism']}\n🎬 **Jami ishlagan:** {int(row['Ishladi']):,} so'm\n💸 **Qo'lga tekkan:** {int(row['To\'landi']):,} so'm\n━━━━━━━━━━━━━━━━━━━━\n{status}"
-        bot.send_message(message.chat.id, text)
-
-@bot.message_handler(func=lambda m: m.text == "➕ Hisob-Kitob" and m.from_user.id == ADMIN_ID)
-def pay_actor_menu(message):
-    df = load_data()
-    markup = types.InlineKeyboardMarkup(row_width=3)
-    buttons = []
-    for _, row in df.iterrows():
-        if int(row["Ishladi"]) > int(row["To'landi"]):
-            buttons.append(types.InlineKeyboardButton(row["Ism"], callback_data=f"pay_{row['Ism']}"))
-    markup.add(*buttons)
-    if not buttons:
-        bot.send_message(message.chat.id, "✅ Hamma qarzlar uzilgan!")
+# --- LOYIHALARNI BOSHQARISH (ADMIN) ---
+@bot.message_handler(func=lambda m: m.text == "🎬 Loyihalar" and m.from_user.id == ADMIN_ID)
+def manage_projects(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("➕ Yangi Loyiha", callback_data="add_p"))
+    markup.add(types.InlineKeyboardButton("❌ Loyihani O'chirish", callback_data="del_p"))
+    
+    pr_df = load_projects()
+    if pr_df.empty:
+        bot.send_message(message.chat.id, "Hozircha loyihalar yo'q.", reply_markup=markup)
     else:
-        bot.send_message(message.chat.id, "Kimga pul to'layapsiz? (Qarzi borlar):", reply_markup=markup)
+        txt = "📁 **Mavjud Loyihalar:**\n"
+        # Faqat noyob loyiha nomlarini ko'rsatish
+        for p in pr_df["Loyiha"].unique():
+            txt += f"🔸 {p}\n"
+        bot.send_message(message.chat.id, txt, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("pay_"))
-def ask_pay_amount(call):
-    actor = call.data.split("_")[1]
-    msg = bot.send_message(call.message.chat.id, f"💰 **{actor}**ga qancha berdingiz? (Faqat raqam)")
-    bot.register_next_step_handler(msg, process_payment, actor)
+@bot.callback_query_handler(func=lambda call: call.data == "add_p")
+def add_p_start(call):
+    msg = bot.send_message(call.message.chat.id, "Loyiha nomini yozing (masalan: Sin Mu):")
+    bot.register_next_step_handler(msg, add_p_step2)
 
-def process_payment(message, actor):
+def add_p_step2(message):
+    p_name = message.text
+    df_actors = load_data()
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for a in df_actors["Ism"]:
+        if a != "Feniks":
+            markup.add(types.InlineKeyboardButton(a, callback_data=f"setrate_{p_name}_{a}"))
+    markup.add(types.InlineKeyboardButton("✅ TUGATISH", callback_data="main_menu_back"))
+    bot.send_message(message.chat.id, f"'{p_name}' uchun aktyorlarni tanlab, narxini belgilang:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("setrate_"))
+def set_rate_step1(call):
+    _, p_name, actor = call.data.split("_")
+    msg = bot.send_message(call.message.chat.id, f"💰 **{actor}** uchun '{p_name}' loyihasida 1 qism narxi qancha? (Raqam yozing)")
+    bot.register_next_step_handler(msg, set_rate_step2, p_name, actor)
+
+def set_rate_step2(message, p_name, actor):
     try:
-        amount = int(message.text)
-        df = load_data()
-        df.loc[df["Ism"] == actor, "To'landi"] += amount
-        save_data(df, DB_FILE)
-        qarz = int(df.loc[df["Ism"] == actor, "Ishladi"].values[0]) - int(df.loc[df["Ism"] == actor, "To'landi"].values[0])
-        bot.send_message(message.chat.id, f"✅ Muvaffaqiyatli!\n👤 {actor}ga {amount:,} so'm yozildi.\n📉 Qolgan qarz: {qarz:,} so'm")
+        rate = int(message.text)
+        pr_df = load_projects()
+        # Eski bo'lsa o'chirish, yangisini qo'shish (Update)
+        pr_df = pr_df[~((pr_df["Loyiha"] == p_name) & (pr_df["Aktyor"] == actor))]
+        new_row = pd.DataFrame({"Loyiha": [p_name], "Aktyor": [actor], "Narx": [rate]})
+        pr_df = pd.concat([pr_df, new_row], ignore_index=True)
+        save_df(pr_df, PROJECTS_FILE)
+        bot.send_message(message.chat.id, f"✅ Saqlandi: {actor} - {rate:,} so'm")
     except:
-        bot.send_message(message.chat.id, "⚠️ Xato! Faqat raqam kiriting.")
+        bot.send_message(message.chat.id, "⚠️ Faqat raqam kiriting!")
 
-# ==========================================
-# 🎙 OVOZ TOPSHIRISH (AVTOMATIK SMETA VA KANAL)
-# ==========================================
-@bot.message_handler(func=lambda m: m.text == "🎙 Ovoz topshirish")
-def voice_guide(message):
-    bot.send_message(message.chat.id, "🎬 **Ovoz topshirish bo'yicha qo'llanma:**\n\nShunchaki tayyor ovozingizni (Voice yoki MP3) botga yuboring. Bot sizdan qaysi loyiha ekanligini so'raydi va avtomatik ravishda hisobingizga pul yozib, kanalga joylaydi.")
-
+# --- OVOZ TOPSHIRISH ---
 user_audio_cache = {}
 
 @bot.message_handler(content_types=['voice', 'audio'])
-def receive_audio(message):
+def handle_audio(message):
     df = load_data()
-    user_id = message.from_user.id
-    if user_id not in df["Telegram_ID"].values: return
+    if message.from_user.id not in df["Telegram_ID"].values: return
     
-    actor = df.loc[df["Telegram_ID"] == user_id, "Ism"].values[0]
-    user_audio_cache[user_id] = {'msg': message, 'actor': actor}
+    actor = df.loc[df["Telegram_ID"] == message.from_user.id, "Ism"].values[0]
+    user_audio_cache[message.from_user.id] = {'msg': message, 'actor': actor}
     
     pr_df = load_projects()
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [types.InlineKeyboardButton(p, callback_data=f"pr_{p}") for p in pr_df["Nomi"]]
-    markup.add(*buttons)
+    # Faqat shu aktyor qatnashayotgan loyihalarni ko'rsatish
+    my_projects = pr_df[pr_df["Aktyor"] == actor]["Loyiha"].unique()
     
-    bot.send_message(message.chat.id, f"🔥 Ovoz qabul qilindi!\n\n**Bu qaysi loyiha uchun?** (Tugmani bosing)", reply_markup=markup)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for p in my_projects:
+        markup.add(types.InlineKeyboardButton(p, callback_data=f"dub_{p}"))
+    
+    if not my_projects.any():
+        bot.send_message(message.chat.id, "❌ Siz hali birorta loyihaga qo'shilmagansiz.")
+    else:
+        bot.send_message(message.chat.id, "Qaysi loyiha uchun ovoz berdingiz?", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("pr_"))
-def ask_part(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("dub_"))
+def dub_step2(call):
     project = call.data.split("_")[1]
     user_id = call.from_user.id
-    bot.delete_message(call.message.chat.id, call.message.message_id)
-    
     user_audio_cache[user_id]['project'] = project
-    msg = bot.send_message(call.message.chat.id, f"🔢 **{project}** loyihasining nechinchi qismi? (Raqam yozing):")
-    bot.register_next_step_handler(msg, send_to_channel, user_id)
+    msg = bot.send_message(call.message.chat.id, f"'{project}' ning nechinchi qismi? (Raqam yozing)")
+    bot.register_next_step_handler(msg, final_process)
 
-def send_to_channel(message, user_id):
-    part = message.text
-    data = user_audio_cache.get(user_id)
-    if not data: return
-    
-    # Avtomatik Smeta (Pul qo'shish)
-    pr_df = load_projects()
-    price = int(pr_df.loc[pr_df["Nomi"] == data['project'], "Narx"].values[0])
-    
-    df = load_data()
-    df.loc[df["Ism"] == data['actor'], "Ishladi"] += price
-    save_data(df, DB_FILE)
-    
-    caption = (
-        f"🎙 **YANGI DUBLYAZH KELDI**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎬 **Loyiha:** {data['project']}\n"
-        f"👤 **Aktyor:** {data['actor']}\n"
-        f"🔢 **Qism:** {part}\n"
-        f"💰 **Smeta:** {price:,} so'm yozildi\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚙️ Holat: _O'tkazish (Tayyor)_\n"
-        f"#{data['project'].replace(' ', '')}"
-    )
-    
+def final_process(message):
+    user_id = message.from_user.id
     try:
+        part = message.text
+        data = user_audio_cache[user_id]
+        
+        pr_df = load_projects()
+        rate = int(pr_df[(pr_df["Loyiha"] == data['project']) & (pr_df["Aktyor"] == data['actor'])]["Narx"].values[0])
+        
+        # Balansni yangilash
+        df = load_data()
+        df.loc[df["Ism"] == data['actor'], "Ishladi"] += rate
+        save_df(df, DB_FILE)
+        
+        # Kanalga yuborish
+        caption = f"🎙 **FENIKS STUDIO**\n🎬 **Loyiha:** {data['project']}\n👤 **Aktyor:** {data['actor']}\n🔢 **Qism:** {part}\n💰 **Stavka:** {rate:,} so'm"
         if data['msg'].content_type == 'voice':
             bot.send_voice(CHANNEL_ID, data['msg'].voice.file_id, caption=caption)
         else:
             bot.send_audio(CHANNEL_ID, data['msg'].audio.file_id, caption=caption)
-        bot.send_message(message.chat.id, f"✅ **Kanalga joylandi!**\nSizning hisobingizga **{price:,} so'm** qo'shildi.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Kanalga yuborishda xatolik. Kanal ID to'g'riligini tekshiring.")
-    
-    del user_audio_cache[user_id]
+            
+        bot.send_message(message.chat.id, f"✅ Hisobingizga {rate:,} so'm qo'shildi va kanalga yuborildi.")
+    except:
+        bot.send_message(message.chat.id, "⚠️ Xatolik yuz berdi. Qismni to'g'ri yozganingizni tekshiring.")
 
-# ==========================================
-# 🤖 AI TARJIMON (Gemini-Pro)
-# ==========================================
-@bot.message_handler(func=lambda m: m.text == "📖 AI Tarjimon")
-def ai_guide(message):
-    bot.send_message(message.chat.id, "🤖 **AI Tarjimon ishga tayyor!**\n\nMenga so'z yoki matnni yuboring, oldiga `Tarjima:` deb yozing.\nMisol: `Tarjima: Stay strong`")
-
-@bot.message_handler(func=lambda m: m.text.startswith("Tarjima:"))
-def translate_ai(message):
-    text = message.text.replace("Tarjima:", "").strip()
-    wait_msg = bot.reply_to(message, "⏳ _Gemini AI o'ylamoqda..._")
-    try:
-        prompt = f"Sen dublyaj aktyorlari uchun yordamchisan. Quyidagi matnni o'zbekchaga tarjima qil va qanday hissiyot bilan aytishni qisqacha yoz:\n\n'{text}'"
-        response = ai_model.generate_content(prompt)
-        bot.edit_message_text(f"🤖 **Feniks AI:**\n\n{response.text}", chat_id=message.chat.id, message_id=wait_msg.message_id)
-    except Exception as e:
-        bot.edit_message_text(f"⚠️ AI tarmog'ida xatolik: {e}", chat_id=message.chat.id, message_id=wait_msg.message_id)
-
-# ==========================================
-# BOSHQA ADMIN FUNKSIYALARI (Parollar, Excel, Loyihalar)
-# ==========================================
-@bot.message_handler(func=lambda m: m.text == "🔑 Parollar" and m.from_user.id == ADMIN_ID)
-def show_pins(message):
+# --- BOSHQA FUNKSIYALAR (Moliya, Hisobim, Excel) ---
+@bot.message_handler(func=lambda m: m.text == "📊 Moliya" and m.from_user.id == ADMIN_ID)
+def finance_report(message):
     df = load_data()
-    txt = "🔐 **Aktyorlar PIN-kodlari:**\n\n"
+    txt = "📊 **FENIKS STUDIO HISOBOTI**\n"
     for _, row in df.iterrows():
-        if row['Ism'] != 'Feniks':
-            status = "✅ Kirdi" if row['Telegram_ID'] != 0 else f"`{row['Parol']}`"
-            txt += f"👤 {row['Ism']}: {status}\n"
+        qarz = int(row["Ishladi"]) - int(row["To'landi"])
+        txt += f"👤 {row['Ism']}: {qarz:,} so'm\n"
     bot.send_message(message.chat.id, txt)
 
-@bot.message_handler(func=lambda m: m.text == "📁 Excel" and m.from_user.id == ADMIN_ID)
-def export_excel(message):
-    load_data().to_excel("Feniks_Moliya.xlsx", index=False)
-    with open("Feniks_Moliya.xlsx", "rb") as f:
-        bot.send_document(message.chat.id, f, caption="📊 FeniksStudio Buxgalteriya")
+@bot.message_handler(func=lambda m: m.text == "💰 Mening Hisobim")
+def my_account(message):
+    df = load_data()
+    row = df[df["Telegram_ID"] == message.from_user.id].iloc[0]
+    qarz = int(row["Ishladi"]) - int(row["To'landi"])
+    bot.send_message(message.chat.id, f"👤 {row['Ism']}\n🎬 Ishlagan: {int(row['Ishladi']):,}\n💸 Olgan: {int(row['To\'landi']):,}\n🔴 Qarz: {qarz:,}")
 
-@bot.message_handler(func=lambda m: m.text == "🎬 Loyihalar" and m.from_user.id == ADMIN_ID)
-def projects_menu(message):
-    df = load_projects()
-    txt = "📁 **Faol Loyihalar:**\n\n"
-    for _, row in df.iterrows():
-        txt += f"🔸 **{row['Nomi']}** (1 qism narxi: {row['Narx']:,} so'm)\n"
-    bot.send_message(message.chat.id, txt)
+@bot.callback_query_handler(func=lambda call: call.data == "main_menu_back")
+def back_home(call):
+    bot.send_message(call.message.chat.id, "Asosiy menyu", reply_markup=main_menu(call.from_user.id))
 
-# Server uyg'oq turishi uchun
 @app.route('/')
-def keep_alive(): return "FeniksStudio Elite v6.0 is 100% Online!"
+def home(): return "FeniksStudio v7.0 Online!"
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: bot.polling(none_stop=True)).start()
