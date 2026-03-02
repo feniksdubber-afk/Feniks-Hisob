@@ -1,79 +1,74 @@
 import telebot
+from telebot import types
 import pandas as pd
 import os
 import threading
 from flask import Flask
 
-# BotFather'dan olingan token
 TOKEN = '6844735110:AAHybqfU2qnfxXuy7MGUG-VxvMWs3aP_5f8'
 bot = telebot.TeleBot(TOKEN)
-
-# Render qidirayotgan "Veb-sayt"
 app = Flask(__name__)
 
-# 1. Barcha ma'lumotlarni bazaga kiritamiz
-data = {
-    "Ism": ["Zoom", "Umarbek", "AMIN", "Bexruz", "Komron", "Shabnam", "Kamilla", "Tarjimon", "Feniks"],
-    "Ishladi": [1400000, 300000, 200000, 400000, 400000, 200000, 200000, 100000, 2360000],
-    "To'landi": [700000, 200000, 150000, 400000, 400000, 100000, 100000, 0, 2360000]
-}
-df = pd.DataFrame(data)
+# Ma'lumotlar bazasi (Buni keyinchalik SQL'ga o'tkazish mumkin)
+projects = ["Gravity Falls", "LTC", "Sin Mu", "The Looney Tunes Show"]
+actors = ["Zoom", "Umarbek", "AMIN", "Bexruz", "Komron", "Shabnam", "Kamilla", "Tarjimon", "Feniks"]
 
-@bot.message_handler(commands=['start', 'hisobot'])
-def send_report(message):
-    df["Qarz"] = df["Ishladi"] - df["To'landi"]
-    msg = "📊 **UZDUBGO JORIY HISOBOT**\n--------------------------------\n"
-    
-    for _, row in df.iterrows():
-        status = "✅" if row["Qarz"] <= 0 else "❌"
-        msg += f"{status} **{row['Ism']}**: {row['Qarz']:,} so'm\n"
-    
-    total_debt = df.loc[df["Ism"] != "Feniks", "Qarz"].sum()
-    msg += "--------------------------------\n"
-    msg += f"🔴 **Jami tarqatilishi kerak: {total_debt:,} so'm**\n"
-    msg += "--------------------------------\n"
-    msg += "✍️ To'lov kiritish uchun: `Ism Summa`\n*(Misol: Zoom 100000)*"
-    
-    bot.reply_to(message, msg, parse_mode="Markdown")
+# Boshlang'ich menyu
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn1 = types.KeyboardButton("📊 Umumiy Hisobot")
+    btn2 = types.KeyboardButton("📁 Loyihalar")
+    btn3 = types.KeyboardButton("➕ Pul To'lash")
+    btn4 = types.KeyboardButton("👤 Aktyor Qo'shish")
+    markup.add(btn1, btn2, btn3, btn4)
+    return markup
 
-@bot.message_handler(func=lambda message: True)
-def handle_payment(message):
-    global df
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "🎬 Uzdubgo Pro tizimiga xush kelibsiz!", reply_markup=main_menu())
+
+@bot.message_handler(func=lambda message: message.text == "📁 Loyihalar")
+def show_projects(message):
+    markup = types.InlineKeyboardMarkup()
+    for p in projects:
+        markup.add(types.InlineKeyboardButton(p, callback_data=f"project_{p}"))
+    bot.send_message(message.chat.id, "Loyihani tanlang:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("project_"))
+def project_details(call):
+    p_name = call.data.split("_")[1]
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, f"📂 Loyiha: {p_name}\nBu yerda qismlar va aktyorlar narxi chiqadi (Hali sozlanmagan).")
+
+@bot.message_handler(func=lambda message: message.text == "➕ Pul To'lash")
+def choose_actor(message):
+    markup = types.InlineKeyboardMarkup()
+    for a in actors:
+        markup.add(types.InlineKeyboardButton(a, callback_data=f"pay_{a}"))
+    bot.send_message(message.chat.id, "Kimga pul berdingiz?", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("pay_"))
+def ask_amount(call):
+    actor = call.data.split("_")[1]
+    msg = bot.send_message(call.message.chat.id, f"💰 {actor}ga qancha pul berdingiz? (Faqat raqam yozing)")
+    bot.register_next_step_handler(msg, process_payment, actor)
+
+def process_payment(message, actor):
     try:
-        text = message.text.split()
-        if len(text) != 2: return
-            
-        target_name = text[0].capitalize()
-        amount = int(text[1])
-        
-        if target_name in df["Ism"].values:
-            df.loc[df["Ism"] == target_name, "To'landi"] += amount
-            df["Qarz"] = df["Ishladi"] - df["To'landi"]
-            new_debt = df.loc[df["Ism"] == target_name, "Qarz"].values[0]
-            
-            bot.reply_to(message, f"✅ **Muvaffaqiyatli!**\n\n👤 {target_name}ga {amount:,} so'm kiritildi.\n📉 Qolgan qarz: {new_debt:,} so'm", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, "⚠️ Ism topilmadi! Ro'yxatdagi ismlardan foydalaning.")
-    except ValueError:
-        bot.reply_to(message, "⚠️ Iltimos, summani faqat raqamlarda yozing.")
-    except Exception as e:
-        bot.reply_to(message, f"⚠️ Xatolik: {str(e)}")
+        amount = int(message.text)
+        # Bu yerda bazani yangilash kodi bo'ladi
+        bot.send_message(message.chat.id, f"✅ {actor}ga {amount:,} so'm kiritildi!", reply_markup=main_menu())
+    except:
+        bot.send_message(message.chat.id, "⚠️ Xato! Faqat raqam kiriting.")
 
-# Render uchun "Aldamchi" sahifa
+# Render uchun soxta port
 @app.route('/')
-def index():
-    return "Uzdubgo Moliya Boti 100% ishlayapti!"
+def index(): return "Uzdubgo Pro is Active!"
 
-# Botni alohida oqimda ishga tushirish funksiyasi
-def run_bot():
-    bot.polling()
+def run_bot(): bot.polling()
 
 if __name__ == "__main__":
-    # Botni orqa fonda yurgizamiz
-    t = threading.Thread(target=run_bot)
-    t.start()
-    
-    # Render so'ragan portni ochamiz
+    threading.Thread(target=run_bot).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
     
