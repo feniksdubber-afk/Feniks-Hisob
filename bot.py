@@ -165,22 +165,28 @@ def login(message):
     else:
         bot.send_message(message.chat.id, "❌ PIN-kod xato.")
 
+# --- PAROL O'ZGARTIRISH (Tuzatilgan versiya) ---
 @bot.message_handler(func=lambda m: m.text == "🔐 Parolni o'zgartirish")
 def change_pass_start(message):
     df = load_data()
     if message.from_user.id not in df["Telegram_ID"].values: return
+    
+    # Eski "osilib qolgan" jarayonlarni majburan tozalaymiz
+    bot.clear_step_handler_by_chat_id(message.chat.id)
+    
     msg = bot.send_message(message.chat.id, "✏️ **Yangi 4 xonali PIN-kod o'ylab toping va yozib yuboring:**\n*(Faqat raqamlardan iborat bo'lsin)*")
     bot.register_next_step_handler(msg, change_pass_save)
 
 def change_pass_save(message):
-    if message.text.isdigit() and len(message.text) == 4:
+    # Foydalanuvchi aynan matn yuborganini va u 4 ta raqamligini tekshiramiz
+    if message.text and message.text.isdigit() and len(message.text) == 4:
         df = load_data()
-        df.loc[df["Telegram_ID"] == message.from_user.id, "Parol"] = message.text
+        df.loc[df["Telegram_ID"] == message.from_user.id, "Parol"] = str(message.text)
         save_df(df, DB_FILE)
         bot.send_message(message.chat.id, f"✅ Parolingiz muvaffaqiyatli o'zgardi! Yangi parolingiz: `{message.text}`")
     else:
-        bot.send_message(message.chat.id, "⚠️ Xato! Parol aynan 4 ta raqamdan iborat bo'lishi shart. Boshidan urining.")
-        # ==========================================
+        bot.send_message(message.chat.id, "⚠️ Xato! Parol aynan 4 ta raqamdan iborat bo'lishi shart. Iltimos, menyudan tugmani qayta bosib urining.")
+==========================================
 # 👑 3-BLOK: REJISSYOR PANELI VA MOLIYAVIY TIZIM
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "👤 Xodim Qo'shish" and m.from_user.id == ADMIN_ID)
