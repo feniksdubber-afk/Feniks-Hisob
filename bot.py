@@ -101,12 +101,14 @@ def main_menu(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     custom_df = load_custom_menu()
     
-    if lavozim == "Admin":
+        if lavozim == "Admin":
         markup.add("📊 Moliya", "💸 Ishchilarga pul tashlash")
         markup.add("🎬 Loyihalar", "👤 Xodim Qo'shish")
-        markup.add("🔑 Parollar", "📁 Excel")
+        markup.add("👤 Xodimni O'chirish", "🔑 Parollar") # Bu yerga xodimni o'chirishni qo'shdik
         markup.add("📝 Vazifa Qo'shish", "🛠 Menu Builder")
-        markup.add("🔤 Tizim Matnlari", "🔐 Parolni o'zgartirish")
+        markup.add("🔤 Tizim Matnlari", "📁 Excel")
+        markup.add("🔐 Parolni o'zgartirish")
+
     elif lavozim == "Audio montajchi":
         markup.add("🎧 Tayyor Material Yuborish", "💰 Mening Hisobim")
         markup.add("📋 Faol Vazifalar", "🔐 Parolni o'zgartirish")
@@ -114,7 +116,7 @@ def main_menu(user_id):
         # Aktyorlar va Tarjimonlar uchun
         markup.add("🎙 Ovoz/Material topshirish", "💰 Mening Hisobim")
         markup.add("📋 Faol Vazifalar", "🔐 Parolni o'zgartirish")
-        
+    
     custom_buttons = custom_df["Tugma_Nomi"].tolist()
     if custom_buttons: markup.add(*custom_buttons)
     return markup
@@ -198,6 +200,35 @@ def save_new_emp(call):
     new_row = pd.DataFrame({"Ism": [name], "Ishladi": [0], "To'landi": [0], "Telegram_ID": [0], "Parol": [pin], "Karta": ["Kiritilmagan"], "Lavozim": [role]})
     save_df(pd.concat([df, new_row], ignore_index=True), DB_FILE)
     bot.edit_message_text(f"✅ Yangi xodim qo'shildi!\n👤 Ism: {name}\n💼 Lavozim: {role}\n🔐 PIN: `{pin}`", call.message.chat.id, call.message.message_id)
+# --- XODIMNI O'CHIRISH (ADMIN) ---
+@bot.message_handler(func=lambda m: m.text == "👤 Xodimni O'chirish" and m.from_user.id == ADMIN_ID)
+def delete_emp_start(message):
+    df = load_data()
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    added = False
+    for _, r in df.iterrows():
+        if r["Lavozim"] != "Admin":
+            markup.add(types.InlineKeyboardButton(f"❌ {r['Ism']}", callback_data=f"delemp_{r['Ism']}"))
+            added = True
+    if added:
+        bot.send_message(message.chat.id, "🗑 Qaysi xodimni bazadan butunlay o'chirib tashlamoqchisiz?", reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, "O'chirish uchun xodimlar topilmadi.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delemp_"))
+def delete_emp_confirm(call):
+    name = call.data.split("_")[1]
+    # 1. Asosiy bazadan o'chirish
+    df = load_data()
+    df = df[df["Ism"] != name]
+    save_df(df, DB_FILE)
+    
+    # 2. Loyihalar ichidan o'chirish
+    pr_df = load_projects()
+    pr_df = pr_df[pr_df["Aktyor"] != name]
+    save_df(pr_df, PROJECTS_FILE)
+    
+    bot.edit_message_text(f"✅ **{name}** va unga tegishli barcha ma'lumotlar (stavkalar, balans) bazadan butunlay o'chirildi.", call.message.chat.id, call.message.message_id)
 
 # --- MOLIYA VA HISOBOTLAR ---
 @bot.message_handler(func=lambda m: m.text in ["📊 Moliya", "🔑 Parollar", "📁 Excel"] and m.from_user.id == ADMIN_ID)
