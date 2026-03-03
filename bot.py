@@ -22,7 +22,8 @@ MENU_FILE = "custom_menu_v12.csv"
 TASKS_FILE = "tasks_v12.csv"
 TEXTS_FILE = "texts_v12.csv" 
 
-STATIC_BUTTONS = ["📊 Moliya", "💸 Ishchilarga pul tashlash", "🎬 Loyihalar", "👤 Xodim Qo'shish", "🔑 Parollar", "📁 Excel", "📝 Vazifa Qo'shish", "🛠 Menu Builder", "🔤 Tizim Matnlari", "🎙 Ovoz/Material topshirish", "💰 Mening Hisobim", "📋 Faol Vazifalar", "🔐 Parolni o'zgartirish", "🎧 Tayyor Material Yuborish"]
+# Pro versiya: Barcha yangi tugmalar ro'yxatga olindi (Fayl ushlagich xato qilmasligi uchun)
+STATIC_BUTTONS = ["📊 Moliya", "💸 Ishchilarga pul tashlash", "🎬 Loyihalar", "👤 Xodim Qo'shish", "👤 Xodimni O'chirish", "📣 E'lon Yuborish", "🔑 Parollar", "📁 Excel", "📝 Vazifa Qo'shish", "🛠 Menu Builder", "🔤 Tizim Matnlari", "🎙 Ovoz/Material topshirish", "💰 Mening Hisobim", "📋 Faol Vazifalar", "🔐 Parolni o'zgartirish", "🎧 Tayyor Material Yuborish", "✍️ Tayyor Elonni yuborish"]
 
 # --- YANGI BAZA YUKLASH (Avtomatik Migratsiya bilan) ---
 def load_data():
@@ -101,22 +102,25 @@ def main_menu(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     custom_df = load_custom_menu()
     
-        if lavozim == "Admin":
+    # Pro versiya: Admin menyusi tartiblandi va yangi lavozimlar qo'shildi
+    if lavozim == "Admin":
         markup.add("📊 Moliya", "💸 Ishchilarga pul tashlash")
         markup.add("🎬 Loyihalar", "👤 Xodim Qo'shish")
-        markup.add("👤 Xodimni O'chirish", "🔑 Parollar") # Bu yerga xodimni o'chirishni qo'shdik
+        markup.add("👤 Xodimni O'chirish", "📣 E'lon Yuborish")
+        markup.add("🔑 Parollar", "📁 Excel")
         markup.add("📝 Vazifa Qo'shish", "🛠 Menu Builder")
-        markup.add("🔤 Tizim Matnlari", "📁 Excel")
-        markup.add("🔐 Parolni o'zgartirish")
-
+        markup.add("🔤 Tizim Matnlari", "🔐 Parolni o'zgartirish")
     elif lavozim == "Audio montajchi":
         markup.add("🎧 Tayyor Material Yuborish", "💰 Mening Hisobim")
+        markup.add("📋 Faol Vazifalar", "🔐 Parolni o'zgartirish")
+    elif lavozim == "Elon yozishchi":
+        markup.add("✍️ Tayyor Elonni yuborish", "💰 Mening Hisobim")
         markup.add("📋 Faol Vazifalar", "🔐 Parolni o'zgartirish")
     else:
         # Aktyorlar va Tarjimonlar uchun
         markup.add("🎙 Ovoz/Material topshirish", "💰 Mening Hisobim")
         markup.add("📋 Faol Vazifalar", "🔐 Parolni o'zgartirish")
-    
+        
     custom_buttons = custom_df["Tugma_Nomi"].tolist()
     if custom_buttons: markup.add(*custom_buttons)
     return markup
@@ -188,7 +192,8 @@ def add_emp_role(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🎙 Aktyor", callback_data=f"addrole_{name}_Aktyor"),
                types.InlineKeyboardButton("📝 Tarjimon", callback_data=f"addrole_{name}_Tarjimon"),
-               types.InlineKeyboardButton("🎧 Audio montajchi", callback_data=f"addrole_{name}_Audio montajchi"))
+               types.InlineKeyboardButton("🎧 Audio montajchi", callback_data=f"addrole_{name}_Audio montajchi"),
+               types.InlineKeyboardButton("✍️ Elon yozishchi", callback_data=f"addrole_{name}_Elon yozishchi")) # Yangi lavozim
     bot.send_message(message.chat.id, f"{name} qaysi lavozimda ishlaydi?", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("addrole_"))
@@ -200,7 +205,8 @@ def save_new_emp(call):
     new_row = pd.DataFrame({"Ism": [name], "Ishladi": [0], "To'landi": [0], "Telegram_ID": [0], "Parol": [pin], "Karta": ["Kiritilmagan"], "Lavozim": [role]})
     save_df(pd.concat([df, new_row], ignore_index=True), DB_FILE)
     bot.edit_message_text(f"✅ Yangi xodim qo'shildi!\n👤 Ism: {name}\n💼 Lavozim: {role}\n🔐 PIN: `{pin}`", call.message.chat.id, call.message.message_id)
-# --- XODIMNI O'CHIRISH (ADMIN) ---
+
+# --- XODIMNI O'CHIRISH (YANGI) ---
 @bot.message_handler(func=lambda m: m.text == "👤 Xodimni O'chirish" and m.from_user.id == ADMIN_ID)
 def delete_emp_start(message):
     df = load_data()
@@ -218,17 +224,31 @@ def delete_emp_start(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delemp_"))
 def delete_emp_confirm(call):
     name = call.data.split("_")[1]
-    # 1. Asosiy bazadan o'chirish
     df = load_data()
-    df = df[df["Ism"] != name]
-    save_df(df, DB_FILE)
-    
-    # 2. Loyihalar ichidan o'chirish
+    save_df(df[df["Ism"] != name], DB_FILE)
     pr_df = load_projects()
-    pr_df = pr_df[pr_df["Aktyor"] != name]
-    save_df(pr_df, PROJECTS_FILE)
-    
-    bot.edit_message_text(f"✅ **{name}** va unga tegishli barcha ma'lumotlar (stavkalar, balans) bazadan butunlay o'chirildi.", call.message.chat.id, call.message.message_id)
+    save_df(pr_df[pr_df["Aktyor"] != name], PROJECTS_FILE)
+    bot.edit_message_text(f"✅ **{name}** va unga tegishli barcha ma'lumotlar bazadan o'chirildi.", call.message.chat.id, call.message.message_id)
+
+# --- ADMIN E'LON YUBORISH (YANGI RADIO FUNKSIYA) ---
+@bot.message_handler(func=lambda m: m.text == "📣 E'lon Yuborish" and m.from_user.id == ADMIN_ID)
+def broadcast_start(message):
+    msg = bot.send_message(message.chat.id, "📣 Barcha xodimlarga yuboriladigan e'lon matnini yozing:\n\n*(Bekor qilish uchun /cancel yozing)*")
+    bot.register_next_step_handler(msg, broadcast_send)
+
+def broadcast_send(message):
+    if message.text == '/cancel':
+        return bot.send_message(message.chat.id, "❌ E'lon yuborish bekor qilindi.")
+    df = load_data()
+    users = df[df["Telegram_ID"] != 0]["Telegram_ID"].unique()
+    count = 0
+    for user_id in users:
+        try:
+            bot.send_message(user_id, f"📢 **FENIKS STUDIO - MUHIM E'LON**\n━━━━━━━━━━━━━━━━━━━━\n\n{message.text}\n\n━━━━━━━━━━━━━━━━━━━━\n👤 *Admin tomonidan yuborildi*")
+            count += 1
+        except:
+            continue
+    bot.send_message(message.chat.id, f"✅ E'lon muvaffaqiyatli yuborildi!\n👥 Jami qabul qildi: {count} ta xodim.")
 
 # --- MOLIYA VA HISOBOTLAR ---
 @bot.message_handler(func=lambda m: m.text in ["📊 Moliya", "🔑 Parollar", "📁 Excel"] and m.from_user.id == ADMIN_ID)
@@ -405,10 +425,10 @@ def add_task_step1(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "clear_tasks")
 def clr_tsk(c): save_df(pd.DataFrame(columns=["ID", "Matn"]), TASKS_FILE); bot.edit_message_text("✅ O'chirildi.", c.message.chat.id, c.message.message_id)
-# ==========================================
+    # ==========================================
 # 🎧 4-BLOK: XODIMLAR PANELI (HISOB VA VAZIFALAR)
 # ==========================================
-@bot.message_handler(func=lambda m: m.text in ["🎙 Ovoz/Material topshirish", "💰 Mening Hisobim", "📋 Faol Vazifalar"])
+@bot.message_handler(func=lambda m: m.text in ["🎙 Ovoz/Material topshirish", "💰 Mening Hisobim", "📋 Faol Vazifalar", "✍️ Tayyor Elonni yuborish"])
 def employee_menus(message):
     df = load_data()
     if message.from_user.id not in df["Telegram_ID"].values: return
@@ -416,6 +436,9 @@ def employee_menus(message):
     
     if message.text == "🎙 Ovoz/Material topshirish":
         bot.send_message(message.chat.id, get_text("ovoz"))
+        
+    elif message.text == "✍️ Tayyor Elonni yuborish":
+        bot.send_message(message.chat.id, "✍️ **E'lon yozuvchi paneli:**\n\nIltimos, kanalga yuborilishi kerak bo'lgan tayyor matnni shu yerga tashlang. Yuborilgan matn to'g'ridan-to'g'ri FENIKS BAZA kanaliga joylanadi.")
         
     elif message.text == "💰 Mening Hisobim":
         balans = int(row["Ishladi"]) - int(row["To'landi"])
@@ -449,14 +472,13 @@ def edit_card_save(message):
 @bot.callback_query_handler(func=lambda call: call.data == "clear_balance")
 def clear_balance_start(call):
     df = load_data()
-    # Umumiy hisobni nollash uchun ishlagan va olingan pullar 0 ga tenglashtiriladi
     df.loc[df["Telegram_ID"] == call.from_user.id, "Ishladi"] = 0
     df.loc[df["Telegram_ID"] == call.from_user.id, "To'landi"] = 0
     save_df(df, DB_FILE)
     bot.edit_message_text("✅ Hisobingiz muvaffaqiyatli 0 so'm holatiga tushirildi va tozalab tashlandi.", call.message.chat.id, call.message.message_id)
 
 # ==========================================
-# 🎛 5-BLOK: AUDIO MONTAJCHI VA UNIVERSAL QABUL QILISH TIZIMI
+# 🎛 5-BLOK: UNIVERSAL QABUL QILISH TIZIMI
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🎧 Tayyor Material Yuborish")
 def montajchi_start(message):
@@ -495,6 +517,13 @@ def handle_all_submissions(message):
     actor = row["Ism"]
     lavozim = row["Lavozim"]
     
+    # Elon yozishchi materiali filtri
+    if lavozim == "Elon yozishchi" and message.content_type == 'text':
+        cap = f"✍️ **YANGI E'LON / POST**\n━━━━━━━━━━━━━━━━━━━━\n👤 **Muallif:** {actor}\n🛠 **Tur:** Loyiha matni\n━━━━━━━━━━━━━━━━━━━━"
+        bot.send_message(CHANNEL_ID, f"{cap}\n\n{message.text}")
+        bot.send_message(message.chat.id, "✅ E'lon matni kanalga muvaffaqiyatli yuborildi! Rahmat!")
+        return
+
     # Montajchi materiali filtri
     if lavozim == "Audio montajchi" and message.from_user.id in montajchi_cache:
         turi = montajchi_cache[message.from_user.id]
@@ -570,4 +599,4 @@ if __name__ == "__main__":
     # Uyqu rejimini bloklash va eski to'qnashuvlarni oldini olish
     threading.Thread(target=lambda: bot.infinity_polling(skip_pending=True)).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-        
+    
