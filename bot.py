@@ -26,33 +26,41 @@ def main_menu(user_id):
     
     if lavozim == "Admin":
         markup.add("📊 Moliya", "💸 Ishchilarga pul tashlash")
-        markup.add("🎬 Loyihalar", "👤 Xodim Qo'shish", "👤 Xodimni O'chirish")
+        markup.add("🎬 Loyihalar", "📈 Ishchilar Holati") # YANGI TUGMA
+        markup.add("👤 Xodim Qo'shish", "👤 Xodimni O'chirish")
         markup.add("📣 E'lon Yuborish", "🔑 Parollar")
         markup.add("📝 Vazifa Qo'shish", "🛠 Menu Builder")
         markup.add("🔤 Tizim Matnlari", "📁 Excel", "🔐 Parolni o'zgartirish")
-    elif lavozim == "Audio montajchi":
-        markup.add("🎧 Tayyor Material Yuborish", "💰 Mening Hisobim")
-        markup.add("📋 Faol Vazifalar", "💬 Adminga Savol/Xabar")
-        markup.add("🔐 Parolni o'zgartirish")
-    elif lavozim == "Elon yozishchi":
-        markup.add("✍️ Tayyor Elonni yuborish", "💰 Mening Hisobim")
-        markup.add("📋 Faol Vazifalar", "💬 Adminga Savol/Xabar")
-        markup.add("🔐 Parolni o'zgartirish")
+    elif lavozim in ["Audio montajchi", "Elon yozishchi"]:
+        btn1 = "🎧 Tayyor Material Yuborish" if lavozim == "Audio montajchi" else "✍️ Tayyor Elonni yuborish"
+        markup.add(btn1, "💰 Mening Hisobim")
+        markup.add("📋 Faol Vazifalar", "📈 Mening Holatim") # YANGI TUGMA
+        markup.add("💬 Adminga Savol/Xabar", "🔐 Parolni o'zgartirish")
     else:
         markup.add("🎙 Ovoz/Material topshirish", "💰 Mening Hisobim")
-        markup.add("📋 Faol Vazifalar", "💬 Adminga Savol/Xabar")
-        markup.add("🔐 Parolni o'zgartirish")
+        markup.add("📋 Faol Vazifalar", "📈 Mening Holatim") # YANGI TUGMA
+        markup.add("💬 Adminga Savol/Xabar", "🔐 Parolni o'zgartirish")
         
     for btn in custom_df["Tugma_Nomi"]: markup.add(btn)
     return markup
 
-@bot.message_handler(commands=['start'])
-def start(message):
+# QOTIB QOLISHGA QARSHI GLOBAL RESET VA START BUYRUG'I
+@bot.message_handler(commands=['start', 'reset'])
+def start_and_reset(message):
     df = load_data()
     user_id = message.from_user.id
+    
+    # Qayerda qotib qolgan bo'lsa ham xotirani tozalaydi
     bot.clear_step_handler_by_chat_id(message.chat.id)
+    
     head = "🎬 **FENIKS STUDIO | ELITE v12.0**\n" + "━" * 25 + "\n"
     
+    # Agar reset bosilgan bo'lsa
+    if message.text == '/reset':
+        bot.send_message(message.chat.id, "🔄 Barcha qadalib qolgan jarayonlar bekor qilindi!", reply_markup=main_menu(user_id) if user_id in df["Telegram_ID"].values else None)
+        return
+
+    # Agar start bosilgan bo'lsa
     if user_id in df["Telegram_ID"].values:
         row = df[df["Telegram_ID"] == user_id].iloc[0]
         if row["Lavozim"] == "Admin": 
