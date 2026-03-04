@@ -8,17 +8,33 @@ user_submission_cache = {}
 
 def register_employee_handlers(bot):
 
-    # --- SHAXSIY HISOB VA KARTA ---
+    # ==========================================
+    # 💰 SHAXSIY HISOB VA KARTA
+    # ==========================================
     @bot.message_handler(func=lambda m: m.text == "💰 Mening Hisobim")
     def my_acc(message):
         r = load_data()[load_data()["Telegram_ID"] == message.from_user.id].iloc[0]
-        m = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("💳 Karta kiritish", callback_data="edit_card"), types.InlineKeyboardButton("🗑 Nollash (0)", callback_data="clr_bal"))
+        m = types.InlineKeyboardMarkup()
+        m.add(types.InlineKeyboardButton("💳 Karta kiritish", callback_data="edit_card"), 
+              types.InlineKeyboardButton("🗑 Nollash (0)", callback_data="clr_bal"))
         bot.send_message(message.chat.id, f"👤 **{r['Ism']}** ({r['Lavozim']})\n💰 Balans: {int(r['Ishladi'])-int(r['To\'landi']):,}\n💳 Karta: `{r['Karta']}`", reply_markup=m)
 
     @bot.callback_query_handler(func=lambda call: call.data == "edit_card")
-    def ed_card(call): bot.register_next_step_handler(bot.send_message(call.message.chat.id, "💳 Yangi karta raqam yozing:"), lambda m: (load_data().assign(Karta=lambda x: [m.text if tid == m.from_user.id else k for tid, k in zip(x['Telegram_ID'], x['Karta'])]).pipe(save_df, DB_FILE), bot.send_message(m.chat.id, f"✅ Saqlandi: `{m.text}`")))
+    def ed_card(call): 
+        bot.register_next_step_handler(bot.send_message(call.message.chat.id, "💳 Yangi karta raqam yozing:"), lambda m: (load_data().assign(Karta=lambda x: [m.text if tid == m.from_user.id else k for tid, k in zip(x['Telegram_ID'], x['Karta'])]).pipe(save_df, DB_FILE), bot.send_message(m.chat.id, f"✅ Saqlandi: `{m.text}`")))
 
-    # --- SHAXSIY VAZIFALARNI KO'RISH (YANGI) ---
+    # TO'G'RILANGAN XATO 1: Balansni nollash funksiyasi qo'shildi!
+    @bot.callback_query_handler(func=lambda call: call.data == "clr_bal")
+    def clear_balance_req(call):
+        df = load_data()
+        df.loc[df["Telegram_ID"] == call.from_user.id, "Ishladi"] = 0
+        df.loc[df["Telegram_ID"] == call.from_user.id, "To'landi"] = 0
+        save_df(df, DB_FILE)
+        bot.edit_message_text("✅ Balansingiz 0 ga tushirildi!", call.message.chat.id, call.message.message_id)
+
+    # ==========================================
+    # 📋 SHAXSIY VAZIFALARNI KO'RISH
+    # ==========================================
     @bot.message_handler(func=lambda m: m.text == "📋 Faol Vazifalar")
     def show_tasks(message):
         df = load_data()
@@ -26,7 +42,6 @@ def register_employee_handlers(bot):
         my_name = df[df["Telegram_ID"] == message.from_user.id].iloc[0]["Ism"]
         
         tasks_df = load_tasks()
-        # Faqat "Hammaga" yoki shu xodimning ismiga yozilgan vazifalarni ajratib olamiz
         my_tasks = tasks_df[(tasks_df["Kimga"] == "Hammaga") | (tasks_df["Kimga"] == my_name)]
         
         if my_tasks.empty: 
@@ -38,7 +53,9 @@ def register_employee_handlers(bot):
                 txt += f"[{tur}] 🔸 {r['Matn']}\n\n"
             bot.send_message(message.chat.id, txt)
 
-    # --- ADMINGA SAVOL YUBORISH (YANGI) ---
+    # ==========================================
+    # 💬 ADMINGA SAVOL YUBORISH
+    # ==========================================
     @bot.message_handler(func=lambda m: m.text == "💬 Adminga Savol/Xabar")
     def ask_admin_start(message):
         bot.clear_step_handler_by_chat_id(message.chat.id)
@@ -48,15 +65,20 @@ def register_employee_handlers(bot):
     def send_to_admin(message):
         df = load_data()
         sender_name = df[df["Telegram_ID"] == message.from_user.id].iloc[0]["Ism"]
-        
-        # Adminga boradigan xabar
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("✉️ Javob yozish", callback_data=f"replyto_{message.from_user.id}"))
-        
         bot.send_message(ADMIN_ID, f"📨 **XODIMDAN SAVOL/XABAR**\n━━━━━━━━━━━━━━━━━\n👤 **Kimdan:** {sender_name}\n\n💬 **Matn:** {message.text}", reply_markup=markup)
         bot.send_message(message.chat.id, "✅ Xabaringiz Rejissyorga yuborildi! Javobni bot orqali kutib oling.")
 
-    # --- UNIVERSAL QABUL QILGICH (Zoomchik va Boshqalar) ---
+    # ==========================================
+    # 📥 UNIVERSAL QABUL QILGICH VA MATERIAL TOPSHIRISH
+    # ==========================================
+    
+    # TO'G'RILANGAN XATO 2: Aktyorlar tugmani bosa olishi ta'minlandi!
+    @bot.message_handler(func=lambda m: m.text == "🎙 Ovoz/Material topshirish")
+    def show_instruction_for_voice(message):
+        bot.send_message(message.chat.id, get_text("ovoz"))
+
     @bot.message_handler(func=lambda m: m.text == "🎧 Tayyor Material Yuborish")
     def mon_start(message):
         montajchi_cache[message.from_user.id] = {'step': 'video'}
@@ -84,12 +106,16 @@ def register_employee_handlers(bot):
             elif st['step'] == 'audio' and message.content_type in ['audio', 'voice', 'document']:
                 st['aud'] = message
                 m = types.InlineKeyboardMarkup()
-                for p in load_projects()[load_projects()["Aktyor"] == actor]["Loyiha"].unique(): m.add(types.InlineKeyboardButton(p, callback_data=f"monsub_{p}"))
+                projs = load_projects()[load_projects()["Aktyor"] == actor]["Loyiha"].unique()
+                if len(projs) == 0: return bot.send_message(message.chat.id, "❌ Sizga biriktirilgan loyihalar yo'q. Adminga murojaat qiling.")
+                for p in projs: m.add(types.InlineKeyboardButton(p, callback_data=f"monsub_{p}"))
                 return bot.send_message(message.chat.id, "🎬 Ikkala fayl olindi! Qaysi loyiha?", reply_markup=m)
 
         user_submission_cache[message.from_user.id] = {'msg': message, 'actor': actor}
         m = types.InlineKeyboardMarkup()
-        for p in load_projects()[load_projects()["Aktyor"] == actor]["Loyiha"].unique(): m.add(types.InlineKeyboardButton(p, callback_data=f"dub_{p}"))
+        projs = load_projects()[load_projects()["Aktyor"] == actor]["Loyiha"].unique()
+        if len(projs) == 0: return bot.send_message(message.chat.id, "❌ Sizga biriktirilgan loyihalar yo'q. Adminga murojaat qiling.")
+        for p in projs: m.add(types.InlineKeyboardButton(p, callback_data=f"dub_{p}"))
         bot.send_message(message.chat.id, "✅ Fayl olindi! Loyihani tanlang:", reply_markup=m)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("monsub_") or c.data.startswith("dub_"))
@@ -97,21 +123,27 @@ def register_employee_handlers(bot):
         is_mon = call.data.startswith("monsub_")
         p = call.data.split("_")[1]
         (montajchi_cache if is_mon else user_submission_cache)[call.from_user.id]['project'] = p
-        bot.register_next_step_handler(bot.send_message(call.message.chat.id, "🔢 Nechinchi qism?"), lambda m: fin_sub(m, is_mon))
+        bot.register_next_step_handler(bot.send_message(call.message.chat.id, "🔢 Nechinchi qism? (Faqat raqam yozing)"), lambda m: fin_sub(m, is_mon))
 
     def fin_sub(message, is_mon):
+        if not message.text or not message.text.isdigit():
+            return bot.send_message(message.chat.id, "⚠️ Xato! Qism faqat raqamlarda yozilishi shart. Qaytadan urinib ko'ring.")
+            
         cache = montajchi_cache if is_mon else user_submission_cache
         d = cache[message.from_user.id]
         actor = load_data().loc[load_data()["Telegram_ID"] == message.from_user.id, "Ism"].values[0]
-        rate = int(load_projects()[(load_projects()["Loyiha"] == d['project']) & (load_projects()["Aktyor"] == actor)]["Narx"].values[0])
+        try:
+            rate = int(load_projects()[(load_projects()["Loyiha"] == d['project']) & (load_projects()["Aktyor"] == actor)]["Narx"].values[0])
+        except IndexError:
+            return bot.send_message(message.chat.id, "❌ Ushbu loyiha bo'yicha sizning narxingiz (stavka) topilmadi.")
         
         df = load_data(); df.loc[df["Ism"] == actor, "Ishladi"] += rate; save_df(df, DB_FILE)
         
-        c_main = f"💿 **YANGI ISH**\n🎬 {d['project']} ({message.text}-qism)\n👤 Muallif: {actor}\n💰 Smeta: {rate:,}"
+        c_main = f"💿 **YANGI ISH**\n🎬 {d['project']} ({message.text}-qism)\n👤 Muallif: {actor}\n💰 Smeta: {rate:,} so'm"
         if is_mon:
             for typ, msg in [("Video", d['vid']), ("Audio", d['aud'])]: bot.copy_message(CHANNEL_ID, message.chat.id, msg.message_id, caption=f"{c_main}\n\n🗂 Turi: {typ}")
         else:
             bot.copy_message(CHANNEL_ID, message.chat.id, d['msg'].message_id, caption=c_main)
             
         bot.send_message(message.chat.id, f"✅ Kanalga yuborildi! Balansga {rate:,} so'm yozildi."); del cache[message.from_user.id]
-      
+        
