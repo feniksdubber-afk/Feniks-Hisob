@@ -30,6 +30,32 @@ def register_admin_handlers(bot):
             with open("Feniks_Hisobot.xlsx", "rb") as f: bot.send_document(message.chat.id, f)
 
     # ==========================================
+    # 📈 XODIMLAR HOLATI VA STATISTIKASI (YANGI)
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text == "📈 Ishchilar Holati" and m.from_user.id == ADMIN_ID)
+    def admin_status_check(message):
+        df = load_data()
+        projs_df = load_projects()
+        txt = "📈 **BARCHA XODIMLAR HOLATI:**\n\n"
+        
+        for _, r in df.iterrows():
+            if r["Lavozim"] == "Admin": continue
+            actor = r["Ism"]
+            my_projs = projs_df[projs_df["Aktyor"] == actor]["Loyiha"].tolist()
+            projs_text = ", ".join(my_projs) if my_projs else "Biriktirilmagan"
+            
+            # Agar baza endi yangilanayotgan bo'lsa, xato bermasligi uchun tekshiramiz
+            oxirgi_l = r.get('Oxirgi_Loyiha', 'Topshirmagan')
+            oxirgi_q = r.get('Oxirgi_Qism', '-')
+            
+            txt += f"👤 **{actor}** ({r['Lavozim']})\n"
+            txt += f"📁 Loyihalari: {projs_text}\n"
+            txt += f"⏳ Oxirgi topshirig'i: {oxirgi_l} ({oxirgi_q}-qism)\n"
+            txt += "━" * 15 + "\n"
+            
+        bot.send_message(message.chat.id, txt)
+
+    # ==========================================
     # 💸 ISHCHILARGA PUL TO'LASH
     # ==========================================
     @bot.message_handler(func=lambda m: m.text == "💸 Ishchilarga pul tashlash" and m.from_user.id == ADMIN_ID)
@@ -79,7 +105,7 @@ def register_admin_handlers(bot):
         del payment_cache[message.from_user.id]
 
     # ==========================================
-    # 📝 SHAXSIY VAZIFA QO'SHISH (YANGI)
+    # 📝 SHAXSIY VAZIFA QO'SHISH 
     # ==========================================
     @bot.message_handler(func=lambda m: m.text == "📝 Vazifa Qo'shish" and m.from_user.id == ADMIN_ID)
     def task_start(message):
@@ -109,7 +135,7 @@ def register_admin_handlers(bot):
         bot.edit_message_text(f"✅ Vazifa '{kimga}' ga muvaffaqiyatli biriktirildi!", call.message.chat.id, call.message.message_id)
 
     # ==========================================
-    # 💬 XODIM XATIGA JAVOB YAZISH (YANGI)
+    # 💬 XODIM XATIGA JAVOB YAZISH 
     # ==========================================
     @bot.callback_query_handler(func=lambda call: call.data.startswith("replyto_"))
     def admin_reply_to_employee(call):
@@ -146,7 +172,13 @@ def register_admin_handlers(bot):
         parts = call.data.split("_")
         name = parts[1]; role = parts[2]; pin = str(random.randint(1000, 9999))
         df = load_data()
-        new_row = pd.DataFrame({"Ism": [name], "Ishladi": [0], "To'landi": [0], "Telegram_ID": [0], "Parol": [pin], "Karta": ["Kiritilmagan"], "Lavozim": [role]})
+        
+        new_row = pd.DataFrame({
+            "Ism": [name], "Ishladi": [0], "To'landi": [0], "Telegram_ID": [0], 
+            "Parol": [pin], "Karta": ["Kiritilmagan"], "Lavozim": [role],
+            "Oxirgi_Loyiha": ["Topshirmagan"], "Oxirgi_Qism": ["-"]
+        })
+        
         save_df(pd.concat([df, new_row], ignore_index=True), DB_FILE)
         bot.edit_message_text(f"✅ Yangi xodim qo'shildi!\n👤 Ism: {name}\n💼 Lavozim: {role}\n🔐 PIN: `{pin}`", call.message.chat.id, call.message.message_id)
 
@@ -285,4 +317,4 @@ def register_admin_handlers(bot):
         btn_name = call.data.split("_", 1)[1]
         save_df(load_custom_menu()[load_custom_menu()["Tugma_Nomi"] != btn_name], MENU_FILE)
         bot.edit_message_text(f"✅ O'chirildi. /start bosing.", call.message.chat.id, call.message.message_id)
-
+        
