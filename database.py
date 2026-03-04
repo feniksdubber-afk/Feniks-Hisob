@@ -3,13 +3,16 @@ import os
 import random
 from config import *
 
-# 1. ASOSIY XODIMLAR BAZASINI YUKLASH
+# 1. ASOSIY XODIMLAR BAZASINI YUKLASH (YANGILANGAN)
 def load_data():
     if not os.path.exists(DB_FILE):
         if os.path.exists("feniks_v11.csv"):
             df = pd.read_csv("feniks_v11.csv")
             if "Karta" not in df.columns: df["Karta"] = "Kiritilmagan"
             if "Lavozim" not in df.columns: df["Lavozim"] = "Aktyor"
+            if "Oxirgi_Loyiha" not in df.columns: df["Oxirgi_Loyiha"] = "Topshirmagan"
+            if "Oxirgi_Qism" not in df.columns: df["Oxirgi_Qism"] = "-"
+            
             df.loc[df["Ism"] == "Feniks", "Lavozim"] = "Admin"
             df.loc[df["Ism"] == "Tarjimon", "Lavozim"] = "Tarjimon"
             df.to_csv(DB_FILE, index=False)
@@ -18,12 +21,28 @@ def load_data():
             df = pd.DataFrame({
                 "Ism": actors, "Ishladi": [0]*len(actors), "To'landi": [0]*len(actors),
                 "Telegram_ID": [0]*len(actors), "Parol": [str(random.randint(1000, 9999)) for _ in range(len(actors))],
-                "Karta": ["Kiritilmagan"]*len(actors), "Lavozim": ["Aktyor"]*len(actors)
+                "Karta": ["Kiritilmagan"]*len(actors), "Lavozim": ["Aktyor"]*len(actors),
+                "Oxirgi_Loyiha": ["Topshirmagan"]*len(actors), # YANGI USTUN
+                "Oxirgi_Qism": ["-"]*len(actors)                # YANGI USTUN
             })
             df.loc[df["Ism"] == "Feniks", "Telegram_ID"] = ADMIN_ID
             df.loc[df["Ism"] == "Feniks", "Lavozim"] = "Admin"
             df.to_csv(DB_FILE, index=False)
-    return pd.read_csv(DB_FILE)
+            
+    # Xavfsiz yangilash: Agar eski baza bo'lsa-yu, yangi ustunlari yo'q bo'lsa, xato bermasdan ularni qo'shadi
+    df = pd.read_csv(DB_FILE)
+    changed = False
+    if "Oxirgi_Loyiha" not in df.columns:
+        df["Oxirgi_Loyiha"] = "Topshirmagan"
+        changed = True
+    if "Oxirgi_Qism" not in df.columns:
+        df["Oxirgi_Qism"] = "-"
+        changed = True
+        
+    if changed:
+        df.to_csv(DB_FILE, index=False)
+        
+    return df
 
 # 2. LOYIHALAR BAZASINI YUKLASH
 def load_projects():
