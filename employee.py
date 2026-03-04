@@ -23,7 +23,6 @@ def register_employee_handlers(bot):
     def ed_card(call): 
         bot.register_next_step_handler(bot.send_message(call.message.chat.id, "💳 Yangi karta raqam yozing:"), lambda m: (load_data().assign(Karta=lambda x: [m.text if tid == m.from_user.id else k for tid, k in zip(x['Telegram_ID'], x['Karta'])]).pipe(save_df, DB_FILE), bot.send_message(m.chat.id, f"✅ Saqlandi: `{m.text}`")))
 
-    # TO'G'RILANGAN XATO 1: Balansni nollash funksiyasi qo'shildi!
     @bot.callback_query_handler(func=lambda call: call.data == "clr_bal")
     def clear_balance_req(call):
         df = load_data()
@@ -31,6 +30,30 @@ def register_employee_handlers(bot):
         df.loc[df["Telegram_ID"] == call.from_user.id, "To'landi"] = 0
         save_df(df, DB_FILE)
         bot.edit_message_text("✅ Balansingiz 0 ga tushirildi!", call.message.chat.id, call.message.message_id)
+
+    # ==========================================
+    # 📈 SHAXSIY HOLAT (YANGI)
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text == "📈 Mening Holatim")
+    def my_status(message):
+        df = load_data()
+        if message.from_user.id not in df["Telegram_ID"].values: return
+        r = df[df["Telegram_ID"] == message.from_user.id].iloc[0]
+        actor = r["Ism"]
+        
+        projs_df = load_projects()
+        my_projs = projs_df[projs_df["Aktyor"] == actor]["Loyiha"].tolist()
+        projs_text = ", ".join(my_projs) if my_projs else "Hali loyihalarga biriktirilmagansiz."
+        
+        # Agar baza endi yangilanayotgan bo'lsa, xato bermasligi uchun tekshiramiz
+        oxirgi_l = r.get('Oxirgi_Loyiha', 'Topshirmagan')
+        oxirgi_q = r.get('Oxirgi_Qism', '-')
+        
+        txt = f"👤 **{actor}** ({r['Lavozim']})\n\n"
+        txt += f"🎬 **Sizning faol loyihalaringiz:**\n{projs_text}\n\n"
+        txt += f"⏳ **Oxirgi topshirgan ishingiz:**\nLoyiha: {oxirgi_l}\nQism: {oxirgi_q}-qism"
+        
+        bot.send_message(message.chat.id, txt)
 
     # ==========================================
     # 📋 SHAXSIY VAZIFALARNI KO'RISH
@@ -73,8 +96,6 @@ def register_employee_handlers(bot):
     # ==========================================
     # 📥 UNIVERSAL QABUL QILGICH VA MATERIAL TOPSHIRISH
     # ==========================================
-    
-    # TO'G'RILANGAN XATO 2: Aktyorlar tugmani bosa olishi ta'minlandi!
     @bot.message_handler(func=lambda m: m.text == "🎙 Ovoz/Material topshirish")
     def show_instruction_for_voice(message):
         bot.send_message(message.chat.id, get_text("ovoz"))
@@ -137,7 +158,12 @@ def register_employee_handlers(bot):
         except IndexError:
             return bot.send_message(message.chat.id, "❌ Ushbu loyiha bo'yicha sizning narxingiz (stavka) topilmadi.")
         
-        df = load_data(); df.loc[df["Ism"] == actor, "Ishladi"] += rate; save_df(df, DB_FILE)
+        # MANA SHU YERDA OXIRGI ISH SAQLANADI (YANGILANGAN)
+        df = load_data()
+        df.loc[df["Ism"] == actor, "Ishladi"] += rate
+        df.loc[df["Ism"] == actor, "Oxirgi_Loyiha"] = d['project']
+        df.loc[df["Ism"] == actor, "Oxirgi_Qism"] = message.text
+        save_df(df, DB_FILE)
         
         c_main = f"💿 **YANGI ISH**\n🎬 {d['project']} ({message.text}-qism)\n👤 Muallif: {actor}\n💰 Smeta: {rate:,} so'm"
         if is_mon:
