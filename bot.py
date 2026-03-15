@@ -8,7 +8,8 @@ import random
 # ==========================================
 # 1. SOZLAMALAR VA KONFIGURATSIYA
 # ==========================================
-TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' # BotFather dan olingan token
+# DIQQAT: BotFather'dan olgan YANGI tokenni shu yerga qo'ying!
+TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' 
 ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
@@ -762,14 +763,12 @@ def process_support_msg(message, menu_msg_id):
     delete_later(message.chat.id, ok.message_id, 3)
     callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id}), 'id': 1}))
 
-print("Feniks Studio boti muvaffaqiyatli ishga tushdi...")
-
 # ==========================================
 # INTERNET UZILISHLARIDAN HIMOYA (PROXY ERROR FIX)
 # ==========================================
-while True:
-    try:
-        bot.infinity_polling(timeout=20, long_polling_timeout=20)
-    except Exception as e:
-        print("Internet (Proxy) uzilishi yuz berdi. 5 soniyadan so'ng qayta ulanadi...")
-        time.sleep(5)
+print("Kutish vaqti (Render'dagi eski bot o'chishiga ruxsat)...")
+time.sleep(5) # Boshqa nusxalar o'lishini kutamiz
+print("Feniks Studio boti muvaffaqiyatli ishga tushirildi!")
+
+# skip_pending=True eski o'qilmagan xabarlarni o'tkazib yuboradi va bot qotib qolmasligini ta'minlaydi.
+bot.infinity_polling(skip_pending=True)
