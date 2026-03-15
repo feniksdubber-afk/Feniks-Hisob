@@ -8,8 +8,7 @@ import random
 # ==========================================
 # 1. SOZLAMALAR VA KONFIGURATSIYA
 # ==========================================
-# DIQQAT: BotFather'dan olgan YANGI tokenni shu yerga qo'ying!
-TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' 
+TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' # Yangi token o'rnatildi
 ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
@@ -764,11 +763,18 @@ def process_support_msg(message, menu_msg_id):
     callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id}), 'id': 1}))
 
 # ==========================================
-# INTERNET UZILISHLARIDAN HIMOYA (PROXY ERROR FIX)
+# INTERNET UZILISHLARIDAN VA XATOLARDAN HIMOYA 
 # ==========================================
 print("Kutish vaqti (Render'dagi eski bot o'chishiga ruxsat)...")
 time.sleep(5) # Boshqa nusxalar o'lishini kutamiz
-print("Feniks Studio boti muvaffaqiyatli ishga tushirildi!")
+print("Feniks Studio boti ishga tushirildi!")
 
-# skip_pending=True eski o'qilmagan xabarlarni o'tkazib yuboradi va bot qotib qolmasligini ta'minlaydi.
-bot.infinity_polling(skip_pending=True)
+while True:
+    try:
+        # Botni ishga tushiramiz
+        bot.infinity_polling(skip_pending=True)
+        break # Agar hamma narsa joyida bo'lib to'xtatilsa tsikldan chiqadi
+    except Exception as e:
+        print(f"Xatolik yuz berdi (409 yoki internet): {e}")
+        print("Boshqa nusxa o'chishini 10 soniya kutib, qayta ulanamiz...")
+        time.sleep(10)
