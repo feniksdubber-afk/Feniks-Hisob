@@ -4,11 +4,14 @@ import sqlite3
 import threading
 import time
 import random
+import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ==========================================
 # 1. SOZLAMALAR VA KONFIGURATSIYA
 # ==========================================
-TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' # Yangi token o'rnatildi
+# Yangi olingan tokenni shu yerda qoldirdim
+TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' 
 ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
@@ -762,18 +765,39 @@ def process_support_msg(message, menu_msg_id):
     delete_later(message.chat.id, ok.message_id, 3)
     callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id}), 'id': 1}))
 
+
 # ==========================================
-# INTERNET UZILISHLARIDAN VA XATOLARDAN HIMOYA 
+# 11. RENDER UCHUN SOXTA VEB-SERVER VA ISHGA TUSHIRISH
 # ==========================================
-print("Kutish vaqti (Render'dagi eski bot o'chishiga ruxsat)...")
-time.sleep(5) # Boshqa nusxalar o'lishini kutamiz
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Feniks Bot ishlashda davom etmoqda!")
+
+def run_dummy_server():
+    # Render avtomatik beradigan portni topamiz
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), DummyHandler)
+    print(f"Render uchun soxta server {port}-portda ishga tushdi...")
+    server.serve_forever()
+
+# Veb-serverni alohida oqimda (thread) ishga tushiramiz
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# ------------------------------------------
+# BOTNI ISHGA TUSHIRISH (Xatolardan himoyalangan)
+# ------------------------------------------
+print("Kutish vaqti (Render'dagi qolib ketgan nusxalar o'lishini kutamiz)...")
+time.sleep(5) 
 print("Feniks Studio boti ishga tushirildi!")
 
 while True:
     try:
         # Botni ishga tushiramiz
         bot.infinity_polling(skip_pending=True)
-        break # Agar hamma narsa joyida bo'lib to'xtatilsa tsikldan chiqadi
+        break 
     except Exception as e:
         print(f"Xatolik yuz berdi (409 yoki internet): {e}")
         print("Boshqa nusxa o'chishini 10 soniya kutib, qayta ulanamiz...")
