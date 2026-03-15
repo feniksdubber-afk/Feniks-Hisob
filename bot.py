@@ -8,7 +8,7 @@ import random
 # ==========================================
 # 1. SOZLAMALAR VA KONFIGURATSIYA
 # ==========================================
-TOKEN = '6844735110:AAE1y58TDn1Kah9SewVx_IFTHBXNZOupJ4w' # BotFather dan olingan token
+TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' # BotFather dan olingan token
 ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
