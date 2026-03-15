@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 # 1. SOZLAMALAR VA KONFIGURATSIYA
 # ==========================================
 # Yangi olingan tokenni shu yerda qoldirdim
-TOKEN = '6844735110:AAFNSZxl48ZrpD8maiiEvVkA_ktdxlVptNM' 
+TOKEN = '6844735110:AAFKMSauRmIgevlJivoj5yzdGpQ1MQehfJo' 
 ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
