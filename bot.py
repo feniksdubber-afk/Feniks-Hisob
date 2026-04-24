@@ -8,17 +8,25 @@ import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ==========================================
-# 1. SOZLAMALAR VA KONFIGURATSIYA
+# 1. SOZLAMALAR VA KONFIGURATSIYA (Xavfsiz qilingan)
 # ==========================================
-# Yangi olingan tokenni shu yerda qoldirdim
-TOKEN = '6844735110:AAFKMSauRmIgevlJivoj5yzdGpQ1MQehfJo' 
-ADMIN_GROUP_ID = -1003783348785 # Feniks Elite Production guruh ID si
-bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
+# Token va Guruh ID sini Railway Variables bo'limidan oladi
+TOKEN = os.environ.get('BOT_TOKEN', 'BU_YERGA_TOKEN_YOZILMAYDI')
+ADMIN_GROUP_ID = int(os.environ.get('ADMIN_GROUP_ID', -1003783348785))
 
+bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 CACHED_GIF_ID = None
 
 # BAZA UCHUN SVETOFOR (HIMOYA)
 db_lock = threading.Lock()
+
+# ==========================================
+# RAILWAY VOLUME UCHUN BAZA YO'LI
+# ==========================================
+DB_DIR = "/app/data"
+if not os.path.exists(DB_DIR):
+    os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, "feniks_studio.db")
 
 # ==========================================
 # 2. AVTOMATIK XODIM QO'SHISH RO'YXATI
@@ -38,7 +46,7 @@ TAYYOR_XODIMLAR = [
 # 3. MA'LUMOTLAR BAZASI (SQLite)
 # ==========================================
 def init_db():
-    conn = sqlite3.connect('feniks_studio.db', check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     cursor = conn.cursor()
     
     with db_lock:
@@ -132,6 +140,41 @@ def get_user(telegram_id):
         return cursor.fetchone()
 
 # ==========================================
+# YANGA FUNKSIYA: UMUMIY RASSILKA (/broadcast)
+# ==========================================
+@bot.message_handler(commands=['broadcast'])
+def broadcast_command(message):
+    user = get_user(message.chat.id)
+    safe_delete(message.chat.id, message.message_id)
+    
+    if user and user[4] == 'admin':
+        msg = bot.send_message(message.chat.id, "📢 <b>Barcha xodimlarga yuboriladigan xabarni yozing:</b>\n<i>(Bekor qilish uchun /cancel deb yozing)</i>")
+        bot.register_next_step_handler(msg, process_broadcast)
+
+def process_broadcast(message):
+    safe_delete(message.chat.id, message.message_id)
+    if message.text == '/cancel':
+        ok = bot.send_message(message.chat.id, "❌ Rassilka bekor qilindi.")
+        delete_later(message.chat.id, ok.message_id, 3)
+        return
+        
+    broadcast_text = message.text
+    count = 0
+    with db_lock:
+        cursor.execute("SELECT telegram_id FROM active_logins")
+        users = cursor.fetchall()
+        
+    for tg in users:
+        try:
+            bot.send_message(tg[0], f"📢 <b>ADMINIDAN XABAR:</b>\n━━━━━━━━━━━━━━━━━━━━\n{broadcast_text}")
+            count += 1
+        except:
+            pass
+            
+    ok = bot.send_message(message.chat.id, f"✅ Xabar tizimdagi faol {count} ta xodimga yuborildi.")
+    delete_later(message.chat.id, ok.message_id, 5)
+
+# ==========================================
 # 5. TIZIMGA KIRISH (START) VA CHIQISH (EXIT)
 # ==========================================
 @bot.message_handler(commands=['exit_login'])
@@ -161,7 +204,6 @@ def process_pin_code(message, prompt_msg_id):
     safe_delete(message.chat.id, message.message_id)
     safe_delete(message.chat.id, prompt_msg_id)
     
-    # HIMOYA: Faqat matnli xabarlarni tekshiramiz
     if not message.text:
         err_msg = bot.send_message(message.chat.id, "❌ <b>Xatolik!</b> Iltimos, faqat PIN-kod (raqamlar) kiriting.")
         delete_later(message.chat.id, err_msg.message_id, 3)
@@ -315,7 +357,6 @@ def admin_user_menu(call):
     try: bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=markup)
     except: pass
 
-# --- XODIMNI O'CHIRISH ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admdel_'))
 def admin_delete_worker(call):
     user_id = call.data.split('_')[1]
@@ -344,7 +385,6 @@ def admin_confirm_delete(call):
     delete_later(call.message.chat.id, ok.message_id, 3)
     admin_callback(type('obj', (object,), {'data': 'admin_workers', 'message': call.message}))
 
-# --- MAOSH TO'LASH FUNKSIYASI ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admpay_'))
 def admin_pay_step1(call):
     user_id = call.data.split('_')[1]
@@ -384,7 +424,6 @@ def admin_pay_step2(message, user_id, name, card, msg_id):
     delete_later(message.chat.id, ok.message_id, 4)
     admin_user_menu(type('obj', (object,), {'data': f"admuser_{user_id}", 'message': type('obj', (object,), {'chat': message.chat, 'message_id': msg_id})}))
 
-# --- Balans (+/-) ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admbal_'))
 def admin_balance_step1(call):
     user_id = call.data.split('_')[1]
@@ -457,7 +496,6 @@ def admin_balance_step4(message, msg_id):
     delete_later(message.chat.id, ok.message_id, 3)
     admin_user_menu(type('obj', (object,), {'data': f"admuser_{state['target_user']}", 'message': type('obj', (object,), {'message_id': msg_id, 'chat': message.chat})}))
 
-# --- Loyiha yaratish ---
 def admin_process_add_project(message, msg_id):
     safe_delete(message.chat.id, message.message_id)
     if not message.text:
@@ -483,8 +521,6 @@ def admin_process_add_project(message, msg_id):
     delete_later(message.chat.id, ok.message_id, 3)
     admin_callback(type('obj', (object,), {'data': 'admin_projects', 'message': type('obj', (object,), {'message_id': msg_id, 'chat': message.chat})}))
 
-
-# --- AKTYORLARNI BIRIKTIRISH VA LOYIHANI O'CHIRISH ---
 def show_cast_menu(chat_id, msg_id, proj_id):
     with db_lock:
         cursor.execute("SELECT name FROM projects WHERE id = ?", (proj_id,))
@@ -591,9 +627,13 @@ def callback_menu(call):
     if not user: return
     if call.data == "menu_cabinet":
         text = "👤 <b>Shaxsiy kabinet.</b> Kerakli bo'limni tanlang:"
+        # SHU YERGA "ISMNI TAHRIRLASH" TUGMASI QO'SHILDI
         markup = InlineKeyboardMarkup(row_width=2).add(
-            InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
-            InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
+            InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), 
+            InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
+            InlineKeyboardButton("✏️ Ismni o'zgartirish", callback_data="cab_editname"), 
+            InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), 
+            InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
         )
         try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
         except: pass
@@ -698,7 +738,7 @@ def reject_submission(call):
         except: pass
 
 # ==========================================
-# 10. SHAXSIY KABINET
+# 10. SHAXSIY KABINET (Ism tahrirlash qismi qo'shildi)
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cab_'))
 def cabinet_handler(call):
@@ -721,13 +761,38 @@ def cabinet_handler(call):
         try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
         except: pass
         bot.register_next_step_handler(call.message, process_card_number, call.message.message_id)
-        
+
+    # --- YANGI: ISMNI TAHRIRLASH ---
+    elif call.data == "cab_editname":
+        text = "✏️ <b>Yangi ism va familiyangizni kiriting:</b>"
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_cabinet"))
+        try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
+        except: pass
+        bot.register_next_step_handler(call.message, process_edit_name, call.message.message_id)
+
     elif call.data == "cab_support":
         text = "💬 <b>Rejissyorga xabaringizni yozib qoldiring.</b>"
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_cabinet"))
         try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
         except: pass
         bot.register_next_step_handler(call.message, process_support_msg, call.message.message_id)
+
+def process_edit_name(message, menu_msg_id):
+    safe_delete(message.chat.id, message.message_id)
+    if not message.text:
+        err = bot.send_message(message.chat.id, "❌ Iltimos, faqat matn kiriting.")
+        delete_later(message.chat.id, err.message_id, 3)
+        return
+        
+    new_name = message.text
+    user = get_user(message.chat.id)
+    with db_lock:
+        cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, user[0]))
+        conn.commit()
+        
+    ok = bot.send_message(message.chat.id, f"✅ Ismingiz muvaffaqiyatli **{new_name}** ga o'zgartirildi!")
+    delete_later(message.chat.id, ok.message_id, 4)
+    callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id})}))
 
 def process_card_number(message, menu_msg_id):
     safe_delete(message.chat.id, message.message_id)
@@ -764,7 +829,6 @@ def process_support_msg(message, menu_msg_id):
     ok = bot.send_message(message.chat.id, "✅ Xabaringiz Rejissyorga yetkazildi.")
     delete_later(message.chat.id, ok.message_id, 3)
     callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id}), 'id': 1}))
-
 
 # ==========================================
 # 11. RENDER UCHUN SOXTA VEB-SERVER VA ISHGA TUSHIRISH
