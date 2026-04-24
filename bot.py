@@ -40,14 +40,14 @@ os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "feniks_studio.db")
 
 def db_query(query, params=(), fetch_one=False, fetch_all=False, commit=False):
-    """Xavfsiz DB so'rovchi wrapper"""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     cursor = conn.cursor()
     try:
         with db_lock:
             cursor.execute(query, params)
             if commit: conn.commit()
-            if fetch_one: return cursor.fetchone()            if fetch_all: return cursor.fetchall()
+            if fetch_one: return cursor.fetchone()
+            if fetch_all: return cursor.fetchall()
     finally:
         conn.close()
 
