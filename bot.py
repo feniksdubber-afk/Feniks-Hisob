@@ -168,7 +168,6 @@ def auth_router(call):
         user_states[chat_id] = {'step': 'forgot_phone'}
         bot.register_next_step_handler(call.message, forgot_step_handler)
 
-# ---------------- REGISTER FLOW ----------------
 def reg_step_handler(message):
     chat_id = message.chat.id
     state = user_states.get(chat_id, {})
@@ -194,8 +193,8 @@ def reg_step_handler(message):
         if db_query("SELECT id FROM users WHERE login = ?", (login,), fetch_one=True):
             bot.send_message(chat_id, "❌ Bu login band. Boshqasini tanlang:")
             bot.register_next_step_handler(message, reg_step_handler)
-            return        state['login'] = login
-        state['step'] = 'reg_pass'
+            return
+        state['login'] = login        state['step'] = 'reg_pass'
         user_states[chat_id] = state
         bot.send_message(chat_id, "🔒 <b>Parol o'ylab toping:</b>\n(Kamida 6 ta belgi)")
         bot.register_next_step_handler(message, reg_step_handler)
@@ -243,14 +242,13 @@ def reg_step_contact(message):
     db_query("INSERT INTO users (name, login, password_hash, phone) VALUES (?, ?, ?, ?)",
              (state['name'], state['login'], hash_password(state['pass']), phone), commit=True)
     
-    u_id = db_query("SELECT id FROM users WHERE login = ?", (state['login'],), fetch_one=True)[0]    db_query("INSERT OR REPLACE INTO active_logins (telegram_id, user_id) VALUES (?, ?)", (chat_id, u_id), commit=True)
-    
+    u_id = db_query("SELECT id FROM users WHERE login = ?", (state['login'],), fetch_one=True)[0]
+    db_query("INSERT OR REPLACE INTO active_logins (telegram_id, user_id) VALUES (?, ?)", (chat_id, u_id), commit=True)    
     user = db_query("SELECT name, balance FROM users WHERE id = ?", (u_id,), fetch_one=True)
     bot.send_message(chat_id, f"🎉 <b>Muvaffaqiyatli ro'yxatdan o'tdingiz!</b>\n\nXush kelibsiz, {user[0]}!")
     del user_states[chat_id]
     show_main_menu(chat_id, user[0], user[1])
 
-# ---------------- LOGIN FLOW ----------------
 def login_step_handler(message):
     chat_id = message.chat.id
     state = user_states.get(chat_id, {})
@@ -292,9 +290,9 @@ def forgot_step_handler(message):
     phone = message.contact.phone_number
     user = db_query("SELECT id, name, login FROM users WHERE phone = ?", (phone,), fetch_one=True)
     if not user:
-        bot.send_message(chat_id, "❌ Bu raqam tizimda topilmadi. Iltimos, admin bilan bog'laning.")        return
-    
-    new_pass = str(random.randint(100000, 999999))
+        bot.send_message(chat_id, "❌ Bu raqam tizimda topilmadi. Iltimos, admin bilan bog'laning.")
+        return
+        new_pass = str(random.randint(100000, 999999))
     db_query("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new_pass), user[0]), commit=True)
     bot.send_message(chat_id, f"🔑 <b>Parol tiklandi!</b>\n\n👤 {user[1]}\n🔑 Login: <code>{user[2]}</code>\n🔑 Yangi parol: <code>{new_pass}</code>\n\nTezroq /start orqali kirib, parolni o'zgartiring.")
     del user_states[chat_id]
@@ -329,27 +327,28 @@ def show_main_menu(chat_id, name, balance, msg_id=None):
         except Exception:
             bot.send_message(chat_id, text, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('menu_'))
-def callback_menu(call):
+def show_cabinet_menu(chat_id):
+    """Kabinet menyusini toza qayta ko'rsatish uchun yordamchi funksiya"""
+    text = "👤 <b>Shaxsiy kabinet</b>"
+    markup = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), 
+        InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
+        InlineKeyboardButton("✏️ Ismni o'zgartirish", callback_data="cab_editname"), 
+        InlineKeyboardButton("🔒 Parolni o'zgartirish", callback_data="cab_changepass"), 
+        InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), 
+        InlineKeyboardButton("🚪 Tizimdan chiqish", callback_data="exit_login"),
+        InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
+    )
+    bot.send_message(chat_id, text, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('menu_'))def callback_menu(call):
     user = db_query("SELECT u.id, u.name, u.balance FROM users u JOIN active_logins al ON u.id = al.user_id WHERE al.telegram_id = ?", 
                     (call.message.chat.id,), fetch_one=True)
     if not user:
         return show_auth_menu(call.message.chat.id, call.message.message_id)
     
     if call.data == "menu_cabinet":
-        text = "👤 <b>Shaxsiy kabinet</b>"
-        markup = InlineKeyboardMarkup(row_width=2).add(
-            InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), 
-            InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
-            InlineKeyboardButton("✏️ Ismni o'zgartirish", callback_data="cab_editname"),             InlineKeyboardButton("🔒 Parolni o'zgartirish", callback_data="cab_changepass"), 
-            InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), 
-            InlineKeyboardButton("🚪 Tizimdan chiqish", callback_data="exit_login"),
-            InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
-        )
-        try:
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=markup)
-        except Exception:
-            pass
+        show_cabinet_menu(call.message.chat.id)
     elif call.data == "menu_main":
         show_main_menu(call.message.chat.id, user[1], user[2], call.message.message_id)
     elif call.data == "menu_submit_voice":
@@ -379,10 +378,7 @@ def cabinet_handler(call):
     
     if call.data == 'exit_login':
         db_query("DELETE FROM active_logins WHERE telegram_id = ?", (chat_id,), commit=True)
-        try:
-            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="👋 <b>Tizimdan muvaffaqiyatli chiqdingiz.</b>")
-        except Exception:
-            pass
+        bot.send_message(chat_id, "👋 <b>Tizimdan muvaffaqiyatli chiqdingiz.</b>")
         show_auth_menu(chat_id)
         
     elif call.data == 'cab_projects':
@@ -390,11 +386,11 @@ def cabinet_handler(call):
         text = "📂 <b>LOYIHALARINGIZ:</b>\n" + "\n".join([f"• {p[0]} (<i>{p[1]} so'm/qism</i>)" for p in projs]) if projs else "<i>Loyihalar yo'q.</i>"
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_cabinet"))
         try:
-            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=text, reply_markup=markup)        except Exception:
+            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=text, reply_markup=markup)
+        except Exception:
             pass
 
-    elif call.data == 'cab_card':
-        card_mask = f"<code>{user[3][:4]} **** **** {user[3][-4:]}</code>" if user[3] else "Kiritilmagan"
+    elif call.data == 'cab_card':        card_mask = f"<code>{user[3][:4]} **** **** {user[3][-4:]}</code>" if user[3] else "Kiritilmagan"
         text = f"💳 <b>Joriy kartangiz:</b> {card_mask}\n\n<i>Yangilash uchun 16 xonali raqamni yuboring:</i>"
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_cabinet"))
         try:
@@ -431,20 +427,19 @@ def cabinet_handler(call):
         bot.register_next_step_handler(call.message, process_support_msg, call.message.message_id)
 
 # ==========================================
-# 6. QO'SHIMCHA STEP HANDLERS (KABINET)
+# 6. QO'SHIMCHA STEP HANDLERS (TOZALANGAN)
 # ==========================================
 def process_card_number(message, menu_msg_id):
     chat_id = message.chat.id
-    user = db_query("SELECT id, card_number FROM users u JOIN active_logins al ON u.id = al.user_id WHERE al.telegram_id = ?", (chat_id,), fetch_one=True)
+    user = db_query("SELECT id FROM users u JOIN active_logins al ON u.id = al.user_id WHERE al.telegram_id = ?", (chat_id,), fetch_one=True)
     if not user: return
     card = message.text.replace(" ", "")
     if len(card) == 16 and card.isdigit():
-        db_query("UPDATE users SET card_number = ? WHERE id = ?", (card, user[0]), commit=True)        ok = bot.send_message(chat_id, "✅ Karta muvaffaqiyatli saqlandi!")
-        bot.register_next_step_handler(ok, lambda m: None) # Holatni tozalash
-        cabinet_handler(type('obj', (), {'data': 'menu_cabinet', 'message': type('obj', (), {'chat_id': chat_id, 'message_id': menu_msg_id})}))
+        db_query("UPDATE users SET card_number = ? WHERE id = ?", (card, user[0]), commit=True)
+        bot.send_message(chat_id, "✅ Karta muvaffaqiyatli saqlandi!")
+        show_cabinet_menu(chat_id)
     else:
-        err = bot.send_message(chat_id, "❌ Karta raqami 16 ta raqamdan iborat bo'lishi kerak.")
-        bot.register_next_step_handler(err, lambda m: process_card_number(m, menu_msg_id))
+        bot.send_message(chat_id, "❌ Karta raqami 16 ta raqamdan iborat bo'lishi kerak. Qaytadan yuboring:")        bot.register_next_step_handler(message, process_card_number, menu_msg_id)
 
 def process_edit_name(message, menu_msg_id):
     chat_id = message.chat.id
@@ -452,31 +447,30 @@ def process_edit_name(message, menu_msg_id):
     if not user or not message.text: return
     db_query("UPDATE users SET name = ? WHERE id = ?", (message.text, user[0]), commit=True)
     bot.send_message(chat_id, "✅ Ismingiz muvaffaqiyatli o'zgartirildi!")
-    cabinet_handler(type('obj', (), {'data': 'menu_cabinet', 'message': type('obj', (), {'chat_id': chat_id, 'message_id': menu_msg_id})}))
+    show_cabinet_menu(chat_id)
 
 def process_change_pass_step1(message, user_id, menu_msg_id):
     chat_id = message.chat.id
     stored_hash = db_query("SELECT password_hash FROM users WHERE id = ?", (user_id,), fetch_one=True)[0]
     if not verify_password(stored_hash, message.text):
-        err = bot.send_message(chat_id, "❌ Eski parol noto'g'ri.")
-        bot.register_next_step_handler(err, lambda m: process_change_pass_step1(m, user_id, menu_msg_id))
+        bot.send_message(chat_id, "❌ Eski parol noto'g'ri. Qaytadan kiriting:")
+        bot.register_next_step_handler(message, process_change_pass_step1, user_id, menu_msg_id)
         return
-    state = {'user_id': user_id, 'menu_msg_id': menu_msg_id}
-    user_states[chat_id] = state
+    user_states[chat_id] = {'user_id': user_id, 'menu_msg_id': menu_msg_id}
     bot.send_message(chat_id, "🔒 <b>Yangi parolni kiriting:</b> (Kamida 6 ta belgi)")
     bot.register_next_step_handler(message, process_change_pass_step2)
 
 def process_change_pass_step2(message):
     chat_id = message.chat.id
     if len(message.text) < 6:
-        err = bot.send_message(chat_id, "❌ Parol juda qisqa. Qaytadan kiriting:")
-        bot.register_next_step_handler(err, process_change_pass_step2)
+        bot.send_message(chat_id, "❌ Parol juda qisqa. Qaytadan kiriting:")
+        bot.register_next_step_handler(message, process_change_pass_step2)
         return
     state = user_states.get(chat_id)
     db_query("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(message.text), state['user_id']), commit=True)
     bot.send_message(chat_id, "✅ Parol muvaffaqiyatli o'zgartirildi!")
     del user_states[chat_id]
-    cabinet_handler(type('obj', (), {'data': 'menu_cabinet', 'message': type('obj', (), {'chat_id': chat_id, 'message_id': state['menu_msg_id'])}))
+    show_cabinet_menu(chat_id)
 
 def process_support_msg(message, menu_msg_id):
     chat_id = message.chat.id
@@ -488,13 +482,13 @@ def process_support_msg(message, menu_msg_id):
         bot.send_voice(ADMIN_GROUP_ID, message.voice.file_id, caption=text_prefix)
     elif message.photo:
         bot.send_photo(ADMIN_GROUP_ID, message.photo[-1].file_id, caption=text_prefix + (message.caption or ''))
-    bot.send_message(chat_id, "✅ Xabaringiz Rejissyorga yetkazildi.")    cabinet_handler(type('obj', (), {'data': 'menu_cabinet', 'message': type('obj', (), {'chat_id': chat_id, 'message_id': menu_msg_id})}))
+    bot.send_message(chat_id, "✅ Xabaringiz Rejissyorga yetkazildi.")
+    show_cabinet_menu(chat_id)
 
 # ==========================================
 # 7. ADMIN PANELI
 # ==========================================
-@bot.message_handler(commands=['admin'])
-def admin_panel(message):
+@bot.message_handler(commands=['admin'])def admin_panel(message):
     user = db_query("SELECT u.id, u.name, u.role FROM users u JOIN active_logins al ON u.id = al.user_id WHERE al.telegram_id = ?", 
                     (message.chat.id,), fetch_one=True)
     if user and user[2] == 'admin':
@@ -537,13 +531,13 @@ def admin_callback(call):
             bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=text, reply_markup=markup)
         except Exception:
             pass
+
     elif cmd == "projects":
         projs = db_query("SELECT id, name FROM projects", fetch_all=True)
         text = "🎬 <b>LOYIHALAR:</b>\n\n" + "\n".join([f"📌 {p[1]}" for p in projs]) if projs else "<i>Loyihalar yo'q.</i>"
         markup = InlineKeyboardMarkup(row_width=1)
         for p in projs:
-            markup.add(InlineKeyboardButton(f"⚙️ {p[1]}", callback_data=f"admproj_{p[0]}"))
-        markup.add(InlineKeyboardButton("➕ Yangi loyiha", callback_data="admin_addproject"))
+            markup.add(InlineKeyboardButton(f"⚙️ {p[1]}", callback_data=f"admproj_{p[0]}"))        markup.add(InlineKeyboardButton("➕ Yangi loyiha", callback_data="admin_addproject"))
         markup.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back"))
         try:
             bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=text, reply_markup=markup)
@@ -555,7 +549,6 @@ def admin_callback(call):
 
 def process_broadcast(message):
     chat_id = message.chat.id
-    db_query("DELETE FROM active_logins WHERE telegram_id = ?", (chat_id,), commit=True) # Step holatini tozalash
     users = db_query("SELECT telegram_id FROM active_logins", fetch_all=True)
     count = 0
     for tg in users:
@@ -564,8 +557,8 @@ def process_broadcast(message):
             count += 1
         except Exception:
             pass
-    ok = bot.send_message(chat_id, f"✅ Xabar tizimdagi faol {count} ta xodimga yuborildi.")
-    bot.register_next_step_handler(ok, lambda m: None)
+    bot.send_message(chat_id, f"✅ Xabar tizimdagi faol {count} ta xodimga yuborildi.")
+    bot.register_next_step_handler(message, lambda m: None)
 
 # ==========================================
 # 8. LOYIHALAR VA OVOZ TOPSHIRISH
@@ -583,20 +576,20 @@ def select_project(call):
 
 def process_episode_number(message, proj_id, proj_name, menu_msg_id):
     if not message.text.isdigit():
-        err = bot.send_message(message.chat.id, "❌ Faqat raqam kiriting.")
-        bot.register_next_step_handler(err, lambda m: process_episode_number(m, proj_id, proj_name, menu_msg_id))
+        bot.send_message(message.chat.id, "❌ Faqat raqam kiriting.")
+        bot.register_next_step_handler(message, process_episode_number, proj_id, proj_name, menu_msg_id)
         return
-    text = "📤 <b>Tayyor faylni (Audio/Video) shu yerga yuboring.</b>"    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_main"))
+    text = "📤 <b>Tayyor faylni (Audio/Video) shu yerga yuboring.</b>"
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_main"))
     try:
         bot.edit_message_text(chat_id=message.chat.id, message_id=menu_msg_id, text=text, reply_markup=markup)
     except Exception:
         pass
     bot.register_next_step_handler(message, process_media_file, proj_id, proj_name, message.text, menu_msg_id)
-
 def process_media_file(message, proj_id, proj_name, episode, menu_msg_id):
     if not (message.audio or message.voice or message.video or message.document):
-        err = bot.send_message(message.chat.id, "❌ Faqat Media fayl yuboring.")
-        bot.register_next_step_handler(err, lambda m: process_media_file(m, proj_id, proj_name, episode, menu_msg_id))
+        bot.send_message(message.chat.id, "❌ Faqat Media fayl yuboring.")
+        bot.register_next_step_handler(message, process_media_file, proj_id, proj_name, episode, menu_msg_id)
         return
 
     user = db_query("SELECT u.id, u.name, u.balance FROM users u JOIN active_logins al ON u.id = al.user_id WHERE al.telegram_id = ?", 
@@ -635,14 +628,14 @@ def reject_submission(call):
     except Exception:
         pass
     tg_ids = db_query("SELECT telegram_id FROM active_logins WHERE user_id = ?", (user_id,), fetch_all=True)
-    for tg in tg_ids:        try:
+    for tg in tg_ids:
+        try:
             bot.send_message(tg[0], f"⚠️ <b>DIQQAT: ISHINGIZ RAD ETILDI!</b>\n🎬 {proj_id} | 🔢 {episode}\n📉 Hisobingizdan {price} so'm chegirildi.")
         except Exception:
             pass
 
 # ==========================================
-# 9. SERVER VA ISHGA TUSHIRISH
-# ==========================================
+# 9. SERVER VA ISHGA TUSHIRISH# ==========================================
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
