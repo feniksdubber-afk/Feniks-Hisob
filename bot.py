@@ -8,23 +8,25 @@ import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ==========================================
-# 1. SOZLAMALAR VA KONFIGURATSIYA
+# 1. SOZLAMALAR VA KONFIGURATSIYA (Xavfsiz qilingan)
 # ==========================================
-# Token va Admin ID endi xavfsiz muhitdan (Environment) olinadi
-TOKEN = os.environ.get('BOT_TOKEN', '6844735110:AAFKMSauRmIgevlJivoj5yzdGpQ1MQehfJo') 
+# Token va Guruh ID sini Railway Variables bo'limidan oladi
+TOKEN = os.environ.get('BOT_TOKEN', 'BU_YERGA_TOKEN_YOZILMAYDI')
 ADMIN_GROUP_ID = int(os.environ.get('ADMIN_GROUP_ID', -1003783348785))
 
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 CACHED_GIF_ID = None
+
+# BAZA UCHUN SVETOFOR (HIMOYA)
 db_lock = threading.Lock()
 
-# Render/Railway uchun bazani xavfsiz joyga saqlash
+# ==========================================
+# RAILWAY VOLUME UCHUN BAZA YO'LI
+# ==========================================
 DB_DIR = "/app/data"
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER'):
+if not os.path.exists(DB_DIR):
     os.makedirs(DB_DIR, exist_ok=True)
-    DB_PATH = os.path.join(DB_DIR, "feniks_studio.db")
-else:
-    DB_PATH = "feniks_studio.db"
+DB_PATH = os.path.join(DB_DIR, "feniks_studio.db")
 
 # ==========================================
 # 2. AVTOMATIK XODIM QO'SHISH RO'YXATI
@@ -59,6 +61,7 @@ def init_db():
                 role TEXT DEFAULT 'worker'
             )
         ''')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS active_logins (
                 telegram_id INTEGER PRIMARY KEY,
@@ -66,6 +69,7 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         ''')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +77,7 @@ def init_db():
                 topic_id INTEGER
             )
         ''')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_projects (
                 user_id INTEGER,
@@ -83,12 +88,20 @@ def init_db():
             )
         ''')
         
-        # Adminni tekshirish va yaratish
+        try: cursor.execute("ALTER TABLE user_projects ADD COLUMN price INTEGER DEFAULT 0")
+        except: pass
+        
+        try:
+            cursor.execute("SELECT id, telegram_id FROM users WHERE telegram_id IS NOT NULL")
+            old_sessions = cursor.fetchall()
+            for u_id, tg_id in old_sessions:
+                cursor.execute("INSERT OR IGNORE INTO active_logins (telegram_id, user_id) VALUES (?, ?)", (tg_id, u_id))
+        except: pass
+        
         cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT INTO users (name, pin_code, role) VALUES ('Rejissyor (Admin)', '7777', 'admin')")
             
-        # Xodimlarni qo'shish
         for ism, karta, pin in TAYYOR_XODIMLAR:
             try:
                 cursor.execute("INSERT INTO users (name, card_number, pin_code, role) VALUES (?, ?, ?, 'worker')", (ism, karta, pin))
@@ -105,8 +118,10 @@ admin_states = {}
 # 4. YORDAMCHI FUNKSIYALAR (ZIRHLANGAN)
 # ==========================================
 def safe_delete(chat_id, message_id):
-    try: bot.delete_message(chat_id, message_id)
-    except: pass
+    try:
+        bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
 
 def delete_later(chat_id, message_id, delay=3):
     def task():
@@ -123,6 +138,41 @@ def get_user(telegram_id):
             WHERE al.telegram_id = ?
         ''', (telegram_id,))
         return cursor.fetchone()
+
+# ==========================================
+# YANGA FUNKSIYA: UMUMIY RASSILKA (/broadcast)
+# ==========================================
+@bot.message_handler(commands=['broadcast'])
+def broadcast_command(message):
+    user = get_user(message.chat.id)
+    safe_delete(message.chat.id, message.message_id)
+    
+    if user and user[4] == 'admin':
+        msg = bot.send_message(message.chat.id, "📢 <b>Barcha xodimlarga yuboriladigan xabarni yozing:</b>\n<i>(Bekor qilish uchun /cancel deb yozing)</i>")
+        bot.register_next_step_handler(msg, process_broadcast)
+
+def process_broadcast(message):
+    safe_delete(message.chat.id, message.message_id)
+    if message.text == '/cancel':
+        ok = bot.send_message(message.chat.id, "❌ Rassilka bekor qilindi.")
+        delete_later(message.chat.id, ok.message_id, 3)
+        return
+        
+    broadcast_text = message.text
+    count = 0
+    with db_lock:
+        cursor.execute("SELECT telegram_id FROM active_logins")
+        users = cursor.fetchall()
+        
+    for tg in users:
+        try:
+            bot.send_message(tg[0], f"📢 <b>ADMINIDAN XABAR:</b>\n━━━━━━━━━━━━━━━━━━━━\n{broadcast_text}")
+            count += 1
+        except:
+            pass
+            
+    ok = bot.send_message(message.chat.id, f"✅ Xabar tizimdagi faol {count} ta xodimga yuborildi.")
+    delete_later(message.chat.id, ok.message_id, 5)
 
 # ==========================================
 # 5. TIZIMGA KIRISH (START) VA CHIQISH (EXIT)
@@ -199,7 +249,7 @@ def show_main_menu(chat_id, name, balance, message_id_to_edit=None):
                     if msg.animation: CACHED_GIF_ID = msg.animation.file_id
                     elif msg.video: CACHED_GIF_ID = msg.video.file_id
         except Exception as e:
-            bot.send_message(chat_id, text + "\n\n⚠️ Eslatma: Animatsiya ishlashi uchun 'feniks.mp4' videoni bot fayllari qatoriga yuklang!", reply_markup=markup)
+            bot.send_message(chat_id, text + "\n\n⚠️ Diqqat: 'feniks.mp4' videoni bot papkasiga yuklang!", reply_markup=markup)
 
 # ==========================================
 # 6. REJISSYOR BOSHQRUVI (ADMIN PANEL)
@@ -385,7 +435,11 @@ def admin_balance_step1(call):
 
 def admin_balance_step2(message, target_user_id, msg_id):
     safe_delete(message.chat.id, message.message_id)
-    if not message.text: return
+    if not message.text:
+        err = bot.send_message(message.chat.id, "❌ Iltimos, faqat matn formatida kiriting.")
+        delete_later(message.chat.id, err.message_id, 3)
+        return
+
     val = message.text.replace(" ", "")
     if not (val.startswith('+') or val.startswith('-')) or not val[1:].isdigit():
         err = bot.send_message(message.chat.id, "❌ Xato format. Masalan: +10000 yoki -5000")
@@ -419,7 +473,11 @@ def admin_balance_step3(call):
 
 def admin_balance_step4(message, msg_id):
     safe_delete(message.chat.id, message.message_id)
-    if not message.text: return
+    if not message.text:
+         bot.send_message(message.chat.id, "Iltimos, sababni yozma ravishda bildiring.")
+         bot.register_next_step_handler(message, admin_balance_step4, msg_id)
+         return
+
     reason = message.text
     state = admin_states.get(message.chat.id)
     
@@ -440,14 +498,20 @@ def admin_balance_step4(message, msg_id):
 
 def admin_process_add_project(message, msg_id):
     safe_delete(message.chat.id, message.message_id)
-    if not message.text: return
+    if not message.text:
+         err = bot.send_message(message.chat.id, "❌ Iltimos, loyiha nomini matn ko'rinishida yozing.")
+         delete_later(message.chat.id, err.message_id, 3)
+         admin_callback(type('obj', (object,), {'data': 'admin_projects', 'message': type('obj', (object,), {'message_id': msg_id, 'chat': message.chat})}))
+         return
+
     proj_name = message.text
     topic_id = None
     try:
         topic = bot.create_forum_topic(chat_id=ADMIN_GROUP_ID, name=proj_name)
         topic_id = topic.message_thread_id
     except Exception as e:
-        pass # Topic ochishda xatolik bo'lsa o'tkazib yuboramiz
+        err = bot.send_message(message.chat.id, f"⚠️ Topic yaratilmadi: {e}")
+        delete_later(message.chat.id, err.message_id, 5)
     
     with db_lock:
         cursor.execute("INSERT INTO projects (name, topic_id) VALUES (?, ?)", (proj_name, topic_id))
@@ -502,6 +566,7 @@ def admin_delete_project(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confdelproj_'))
 def admin_confirm_delete_project(call):
     proj_id = call.data.split('_')[1]
+    
     with db_lock:
         cursor.execute("DELETE FROM user_projects WHERE project_id = ?", (proj_id,))
         cursor.execute("DELETE FROM projects WHERE id = ?", (proj_id,))
@@ -509,6 +574,7 @@ def admin_confirm_delete_project(call):
     
     ok = bot.send_message(call.message.chat.id, "✅ Loyiha butunlay o'chirib yuborildi.")
     delete_later(call.message.chat.id, ok.message_id, 3)
+    
     admin_callback(type('obj', (object,), {'data': 'admin_projects', 'message': call.message}))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admproj_') or call.data.startswith('togglecast_'))
@@ -561,9 +627,13 @@ def callback_menu(call):
     if not user: return
     if call.data == "menu_cabinet":
         text = "👤 <b>Shaxsiy kabinet.</b> Kerakli bo'limni tanlang:"
+        # SHU YERGA "ISMNI TAHRIRLASH" TUGMASI QO'SHILDI
         markup = InlineKeyboardMarkup(row_width=2).add(
-            InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
-            InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
+            InlineKeyboardButton("📂 Loyihalarim", callback_data="cab_projects"), 
+            InlineKeyboardButton("💳 Karta raqami", callback_data="cab_card"),
+            InlineKeyboardButton("✏️ Ismni o'zgartirish", callback_data="cab_editname"), 
+            InlineKeyboardButton("💬 Adminga yozish", callback_data="cab_support"), 
+            InlineKeyboardButton("⬅️ Orqaga", callback_data="menu_main")
         )
         try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
         except: pass
@@ -595,6 +665,7 @@ def select_project(call):
 
 def process_episode_number(message, proj_id, proj_name, menu_msg_id):
     safe_delete(message.chat.id, message.message_id) 
+    
     if not message.text or not message.text.isdigit():
         err = bot.send_message(message.chat.id, "❌ Faqat raqam kiriting.")
         delete_later(message.chat.id, err.message_id, 3)
@@ -617,6 +688,7 @@ def process_media_file(message, proj_id, proj_name, episode, menu_msg_id):
         return
 
     user = get_user(message.chat.id)
+    
     with db_lock:
         cursor.execute('SELECT up.price, p.topic_id FROM projects p JOIN user_projects up ON p.id = up.project_id WHERE p.id = ? AND up.user_id = ?', (proj_id, user[0]))
         p_data = cursor.fetchone()
@@ -638,7 +710,7 @@ def process_media_file(message, proj_id, proj_name, episode, menu_msg_id):
         elif message.video: bot.send_video(ADMIN_GROUP_ID, message.video.file_id, caption=admin_text, reply_markup=admin_markup, message_thread_id=topic_id)
         else: bot.send_document(ADMIN_GROUP_ID, message.document.file_id, caption=admin_text, reply_markup=admin_markup, message_thread_id=topic_id)
     except Exception as e:
-        bot.send_message(message.chat.id, f"Fayl guruhga bormadi. Topic bilan xatolik bo'lishi mumkin.")
+        bot.send_message(message.chat.id, f"Fayl guruhga bormadi. Topic bilan xatolik: {e}")
 
 # ==========================================
 # 9. ADMIN RAD ETISH FUNKSIYASI 
@@ -666,7 +738,7 @@ def reject_submission(call):
         except: pass
 
 # ==========================================
-# 10. SHAXSIY KABINET
+# 10. SHAXSIY KABINET (Ism tahrirlash qismi qo'shildi)
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cab_'))
 def cabinet_handler(call):
@@ -689,7 +761,15 @@ def cabinet_handler(call):
         try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
         except: pass
         bot.register_next_step_handler(call.message, process_card_number, call.message.message_id)
-        
+
+    # --- YANGI: ISMNI TAHRIRLASH ---
+    elif call.data == "cab_editname":
+        text = "✏️ <b>Yangi ism va familiyangizni kiriting:</b>"
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_cabinet"))
+        try: bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, reply_markup=markup)
+        except: pass
+        bot.register_next_step_handler(call.message, process_edit_name, call.message.message_id)
+
     elif call.data == "cab_support":
         text = "💬 <b>Rejissyorga xabaringizni yozib qoldiring.</b>"
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Bekor qilish", callback_data="menu_cabinet"))
@@ -697,9 +777,31 @@ def cabinet_handler(call):
         except: pass
         bot.register_next_step_handler(call.message, process_support_msg, call.message.message_id)
 
+def process_edit_name(message, menu_msg_id):
+    safe_delete(message.chat.id, message.message_id)
+    if not message.text:
+        err = bot.send_message(message.chat.id, "❌ Iltimos, faqat matn kiriting.")
+        delete_later(message.chat.id, err.message_id, 3)
+        return
+        
+    new_name = message.text
+    user = get_user(message.chat.id)
+    with db_lock:
+        cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, user[0]))
+        conn.commit()
+        
+    ok = bot.send_message(message.chat.id, f"✅ Ismingiz muvaffaqiyatli **{new_name}** ga o'zgartirildi!")
+    delete_later(message.chat.id, ok.message_id, 4)
+    callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id})}))
+
 def process_card_number(message, menu_msg_id):
     safe_delete(message.chat.id, message.message_id)
-    if not message.text: return
+    
+    if not message.text:
+         err = bot.send_message(message.chat.id, "❌ Iltimos, karta raqamini matn shaklida kiriting.")
+         delete_later(message.chat.id, err.message_id, 3)
+         bot.register_next_step_handler(message, process_card_number, menu_msg_id)
+         return
          
     user = get_user(message.chat.id)
     card = message.text.replace(" ", "")
@@ -728,7 +830,6 @@ def process_support_msg(message, menu_msg_id):
     delete_later(message.chat.id, ok.message_id, 3)
     callback_menu(type('obj', (object,), {'data': 'menu_cabinet', 'message': type('obj', (object,), {'chat': message.chat, 'message_id': menu_msg_id}), 'id': 1}))
 
-
 # ==========================================
 # 11. RENDER UCHUN SOXTA VEB-SERVER VA ISHGA TUSHIRISH
 # ==========================================
@@ -740,23 +841,28 @@ class DummyHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Feniks Bot ishlashda davom etmoqda!")
 
 def run_dummy_server():
+    # Render avtomatik beradigan portni topamiz
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), DummyHandler)
+    print(f"Render uchun soxta server {port}-portda ishga tushdi...")
     server.serve_forever()
 
+# Veb-serverni alohida oqimda (thread) ishga tushiramiz
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # ------------------------------------------
-# BOTNI ISHGA TUSHIRISH
+# BOTNI ISHGA TUSHIRISH (Xatolardan himoyalangan)
 # ------------------------------------------
-print("Kutish vaqti...")
+print("Kutish vaqti (Render'dagi qolib ketgan nusxalar o'lishini kutamiz)...")
 time.sleep(5) 
 print("Feniks Studio boti ishga tushirildi!")
 
 while True:
     try:
+        # Botni ishga tushiramiz
         bot.infinity_polling(skip_pending=True)
         break 
     except Exception as e:
-        print(f"Xatolik yuz berdi: {e}")
+        print(f"Xatolik yuz berdi (409 yoki internet): {e}")
+        print("Boshqa nusxa o'chishini 10 soniya kutib, qayta ulanamiz...")
         time.sleep(10)
